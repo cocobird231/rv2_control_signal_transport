@@ -1,0 +1,16 @@
+keyboard_source:
+  ros__parameters:
+    server_name: control_server
+    csm_name: keyboard_source
+    channel_name: keyboard_control
+    priority: 50
+    timeout_ms: 2000
+    disconnect_timeout_ms: 10000
+    initial_msg_type: joy
+    max_setpoint_linear: 1.0
+    max_setpoint_angular: 1.0
+    ramp_step_linear: 0.05
+    ramp_step_angular: 0.05
+    send_rate_ms: 100
+    keyboard_device: "stdin"  # evdev path (e.g. /dev/input/event3); "stdin"/"tty" = force terminal; "" = auto-detect (prefers /dev/tty in X11/noVNC sessions, evdev when headless)
+    csm_status_timer_interval_ms: 1000  # CSM status/disconnect timer period (ms)
