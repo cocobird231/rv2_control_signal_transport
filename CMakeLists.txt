@@ -13,7 +13,6 @@ find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(rv2_interfaces REQUIRED)
-find_package(rv2_server_control REQUIRED)
 
 # ── keyboard_source (composable node) ─────────────────────────────────────────
 add_library(keyboard_source_component SHARED
@@ -29,7 +28,6 @@ ament_target_dependencies(keyboard_source_component
   geometry_msgs
   std_msgs
   rv2_interfaces
-  rv2_server_control
 )
 rclcpp_components_register_node(keyboard_source_component
   PLUGIN "KeyboardSourceNode"
@@ -44,6 +42,10 @@ install(TARGETS keyboard_source_component keyboard_source
 # ── public headers ────────────────────────────────────────────────────────────
 install(DIRECTORY include/ DESTINATION include)
 ament_export_include_directories(include)
+ament_export_dependencies(
+  rclcpp rclcpp_components
+  sensor_msgs geometry_msgs std_msgs
+  rv2_interfaces)
 
 # ── launch files ──────────────────────────────────────────────────────────────
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})

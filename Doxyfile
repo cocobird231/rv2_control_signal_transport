@@ -1,0 +1,59 @@
+# Doxyfile — rv2_control_signal_transport
+# Generated for use with Breathe/Sphinx integration.
+#
+# OUTPUT_DIRECTORY is intentionally omitted here; it is injected at build time
+# by build_docs.sh using the stdin-override pattern:
+#   ( cat Doxyfile ; echo "OUTPUT_DIRECTORY = <path>" ) | doxygen -
+# Do not run `doxygen Doxyfile` directly — use build_docs.sh instead.
+
+# ── Project ───────────────────────────────────────────────────────────────────
+PROJECT_NAME           = "rv2_control_signal_transport"
+PROJECT_NUMBER         = 0.0.0
+PROJECT_BRIEF          = "Keyboard control signal source node for the rv2 robot stack"
+# ── Input ─────────────────────────────────────────────────────────────────────
+INPUT                  = include src
+FILE_PATTERNS          = *.h *.hpp *.cpp
+RECURSIVE              = YES
+
+# ── Extraction settings ───────────────────────────────────────────────────────
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+EXTRACT_ANON_NSPACES   = NO
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+
+# ── Build ─────────────────────────────────────────────────────────────────────
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES      # Required for Breathe/Sphinx integration
+
+# ── HTML settings ─────────────────────────────────────────────────────────────
+HTML_OUTPUT            = html
+HTML_TIMESTAMP         = YES
+GENERATE_TREEVIEW      = YES
+
+# ── XML settings ──────────────────────────────────────────────────────────────
+XML_OUTPUT             = xml
+XML_PROGRAMLISTING     = YES
+
+# ── Source browser ────────────────────────────────────────────────────────────
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+STRIP_CODE_COMMENTS    = NO
+
+# ── Preprocessing ─────────────────────────────────────────────────────────────
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = NO
+
+# ── Diagrams (requires dot / Graphviz) ───────────────────────────────────────
+HAVE_DOT               = NO
+CLASS_DIAGRAMS         = YES
+
+# ── Warnings ──────────────────────────────────────────────────────────────────
+WARN_IF_UNDOCUMENTED   = YES
+WARN_NO_PARAMDOC       = YES
+# WARN_LOGFILE is set by build_docs.sh at runtime via the stdin-override pattern.
+
+# ── Aliases (convenience macros used in the codebase) ────────────────────────
+ALIASES                = "threadSafe=\par Thread safety\n"

@@ -66,7 +66,7 @@
 
 #include <rv2_interfaces/msg/control_signal_const.hpp>
 #include <rv2_interfaces/msg/control_signal_info.hpp>
-#include "rv2_server_control/control_signal_manager.h"
+#include "rv2_control_signal_transport/control_signal_manager.h"
 #include "rv2_control_signal_transport/keyboard_handler.h"
 
 #include <sensor_msgs/msg/joy.hpp>
