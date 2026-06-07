@@ -21,26 +21,19 @@
 #pragma once
 
 #include "control_signal_transport.h"
+#include "control_signal_factory.h"
 
 #include <rv2_interfaces/control_signal_info.h>
 #include <rv2_interfaces/service.h>
 #include <rv2_interfaces/srv/control_signal_reg.hpp>
 #include <rv2_interfaces/srv/control_signal_info_req.hpp>
-#include <rv2_interfaces/srv/control_signal_joy.hpp>
-#include <rv2_interfaces/srv/control_signal_twist.hpp>
+
+#include <typeindex>
+#include <typeinfo>
 
 
 namespace rv2_interfaces
 {
-
-// ── Trait: maps msgT → matching ROS 2 service type (or void) ─────────────────
-namespace detail
-{
-template<typename T> struct ServiceTypeOf          { using type = void; };
-template<> struct ServiceTypeOf<sensor_msgs::msg::Joy>     { using type = srv::ControlSignalJoy; };
-template<> struct ServiceTypeOf<geometry_msgs::msg::Twist> { using type = srv::ControlSignalTwist; };
-// std_msgs::msg::String → void (no matching srv type)
-} // namespace detail
 
 
 /**
@@ -281,18 +274,16 @@ public:
     /**
      * @brief Returns the ControlSignalConst type-string for a message type msgT.
      * Public static utility used by ControlServer and other consumers.
+     *
+     * Resolves the type key via ControlSignalFactory; returns
+     * CONTROL_SIGNAL_TYPE_UNKNOWN if msgT has not been registered.
      */
     template<typename msgT>
     static std::string typeKeyFor()
     {
-        if constexpr (std::is_same_v<msgT, sensor_msgs::msg::Joy>)
-            return msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_JOY;
-        else if constexpr (std::is_same_v<msgT, geometry_msgs::msg::Twist>)
-            return msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_TWIST;
-        else if constexpr (std::is_same_v<msgT, std_msgs::msg::String>)
-            return msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_STRING;
-        else
-            return msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_UNKNOWN;
+        const std::string key =
+            ControlSignalFactory::Instance().typeKey(std::type_index(typeid(msgT)));
+        return key.empty() ? msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_UNKNOWN : key;
     }
 
     // ── Per-type sink message callback registration ────────────────────────────
@@ -316,34 +307,36 @@ public:
     void setSinkMsgCallback(
         std::function<void(const msgT&, const msg::ControlSignalInfo&)> cb)
     {
-        const std::string typeKey = _typeKey<msgT>();
+        const std::type_index tid(typeid(msgT));
 
-        // Store the erased callback.
+        // Store the erased applicator. It installs a type-erased callback on the
+        // Sink (via BaseControlSignalSink::setErasedMsgCallback) that restores
+        // the concrete msgT before invoking the user callback — no knowledge of
+        // the concrete Sink specialisation is required.
         {
             std::lock_guard<std::mutex> lk(cbMtx_);
             if (cb)
-                typedCbs_[typeKey] = [cb](std::shared_ptr<BaseControlSignalSink> base,
-                                          const msg::ControlSignalInfo& info)
+            {
+                typedCbs_[tid] = [cb](std::shared_ptr<BaseControlSignalSink> base,
+                                      const msg::ControlSignalInfo& /*info*/)
                 {
-                    // Down-cast to the two concrete Sink types that match msgT.
-                    if (auto* s = dynamic_cast<ControlSignalSink<msgT, void>*>(base.get()))
-                        s->setMsgCallback([cb, info](const msgT& m, const msg::ControlSignalInfo& i) { cb(m, i); });
-                    else if (auto* s = dynamic_cast<ControlSignalSink<msgT, srv::ControlSignalJoy>*>(base.get()))
-                        s->setMsgCallback([cb, info](const msgT& m, const msg::ControlSignalInfo& i) { cb(m, i); });
-                    else if (auto* s = dynamic_cast<ControlSignalSink<msgT, srv::ControlSignalTwist>*>(base.get()))
-                        s->setMsgCallback([cb, info](const msgT& m, const msg::ControlSignalInfo& i) { cb(m, i); });
-                    (void)info;
+                    base->setErasedMsgCallback(
+                        [cb](const void* m, const msg::ControlSignalInfo& i)
+                        { cb(*static_cast<const msgT*>(m), i); });
                 };
+            }
             else
-                typedCbs_.erase(typeKey);
+            {
+                typedCbs_.erase(tid);
+            }
         }
 
         // Apply to already-created Sinks of this type.
         std::lock_guard<std::mutex> lk(sinkMtx_);
         for (auto& [ch, snk] : sinks_)
         {
-            if (snk->getInfo().control_signal_type == typeKey)
-                _applyCbToSink(snk, typeKey);
+            if (snk->msgType() == tid)
+                _applyCbToSink(snk, tid);
         }
     }
 private:
@@ -358,26 +351,23 @@ private:
     std::map<std::string, std::shared_ptr<BaseControlSignalSink>> sinks_;     // key: channel_name
     std::map<std::string, int64_t> sinkTimeoutSinceNs_;   // key: channel_name, value: steadyNs() when TIMEOUT first observed
 
-    // Per-type sink callbacks: key = control_signal_type string.
-    // Value is a type-erased applicator that down-casts and calls setMsgCallback().
+    // Per-type sink callbacks: key = std::type_index of the concrete msgT.
+    // Value is a type-erased applicator that installs an erased callback on the
+    // Sink (see setSinkMsgCallback / BaseControlSignalSink::setErasedMsgCallback).
     using CbApplicator = std::function<void(std::shared_ptr<BaseControlSignalSink>,
                                             const msg::ControlSignalInfo&)>;
-    mutable std::mutex                    cbMtx_;
-    std::map<std::string, CbApplicator>   typedCbs_;
+    mutable std::mutex                       cbMtx_;
+    std::map<std::type_index, CbApplicator>  typedCbs_;
 
-    // Returns the ControlSignalConst type string for a given msgT.
-    template<typename msgT>
-    static std::string _typeKey() { return typeKeyFor<msgT>(); }
-
-    // Apply the registered callback (if any) for the sink's type.
+    // Apply the registered callback (if any) for the sink's message type.
     // Must be called with sinkMtx_ held (cbMtx_ acquired internally).
     void _applyCbToSink(std::shared_ptr<BaseControlSignalSink>& snk,
-                        const std::string& typeKey)
+                        std::type_index tid)
     {
         CbApplicator applicator;
         {
             std::lock_guard<std::mutex> lk(cbMtx_);
-            auto it = typedCbs_.find(typeKey);
+            auto it = typedCbs_.find(tid);
             if (it == typedCbs_.end()) return;
             applicator = it->second;
         }
@@ -539,7 +529,8 @@ private:
         {
             std::lock_guard<std::mutex> lk(sinkMtx_);
             sinks_[info.channel_name] = sink;
-            _applyCbToSink(sinks_[info.channel_name], info.control_signal_type);
+            _applyCbToSink(sinks_[info.channel_name],
+                           sinks_[info.channel_name]->msgType());
         }
 
         res->response = SRV_RES_SUCCESS;
@@ -576,56 +567,40 @@ private:
         res->response = SRV_RES_SUCCESS;
     }
 
-    // ── Dynamic factories (dispatch on mode + type) ────────────────────────────
+    // ── Dynamic factories (delegated to ControlSignalFactory) ────────────────
 
     /**
-     * Creates a ControlSignalSource dispatching on both control_signal_mode and
-     * control_signal_type.
-     *
-     * For service mode, the Source is created directly to ensure the msgT/srvT pair
-     * is always compatible (Joy↔ControlSignalJoy, Twist↔ControlSignalTwist).
-     * "string" service mode is not defined in rv2_interfaces; falls back to topic.
+     * Creates a ControlSignalSource for @p info via ControlSignalFactory.
+     * Returns nullptr if the type is not registered.
      */
     std::shared_ptr<BaseControlSignalSource> _makeSource(const msg::ControlSignalInfo& info)
     {
-        const auto& mode = info.control_signal_mode;
-        const auto& type = info.control_signal_type;
-
-        if (mode == msg::ControlSignalConst::CONTROL_SIGNAL_MODE_SERVICE)
+        try
         {
-            if (type == msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_JOY)
-                return std::make_shared<ControlSignalSource<sensor_msgs::msg::Joy,
-                                                            srv::ControlSignalJoy>>(node_, info);
-            if (type == msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_TWIST)
-                return std::make_shared<ControlSignalSource<geometry_msgs::msg::Twist,
-                                                            srv::ControlSignalTwist>>(node_, info);
-            // "string" has no service type — fall through to topic mode.
+            return ControlSignalFactory::Instance()
+                .CreateSource(info.control_signal_type, node_, info);
         }
-        // Topic mode (also the fallback for unsupported service types).
-        return makeControlSignalSource<void>(node_, info);
+        catch (const std::runtime_error&)
+        {
+            return nullptr;
+        }
     }
 
     /**
-     * Creates a ControlSignalSink dispatching on both control_signal_mode and
-     * control_signal_type.
-     *
-     * Same direct-creation strategy as _makeSource() for service mode.
+     * Creates a ControlSignalSink for @p info via ControlSignalFactory.
+     * Returns nullptr if the type is not registered.
      */
     std::shared_ptr<BaseControlSignalSink> _makeSink(const msg::ControlSignalInfo& info)
     {
-        const auto& mode = info.control_signal_mode;
-        const auto& type = info.control_signal_type;
-
-        if (mode == msg::ControlSignalConst::CONTROL_SIGNAL_MODE_SERVICE)
+        try
         {
-            if (type == msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_JOY)
-                return std::make_shared<ControlSignalSink<sensor_msgs::msg::Joy,
-                                                          srv::ControlSignalJoy>>(node_, info);
-            if (type == msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_TWIST)
-                return std::make_shared<ControlSignalSink<geometry_msgs::msg::Twist,
-                                                          srv::ControlSignalTwist>>(node_, info);
+            return ControlSignalFactory::Instance()
+                .CreateSink(info.control_signal_type, node_, info);
         }
-        return makeControlSignalSink<void>(node_, info);
+        catch (const std::runtime_error&)
+        {
+            return nullptr;
+        }
     }
 };
 

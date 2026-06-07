@@ -86,7 +86,6 @@ using Twist = geometry_msgs::msg::Twist;
 namespace CSC = rv2_interfaces::msg;
 
 using rv2_interfaces::ControlSignalManager;
-using rv2_interfaces::ControlSignalSource;
 using rv2_transport::Key;
 using rv2_transport::KeyEvent;
 using rv2_transport::KeyboardHandler;
@@ -245,9 +244,6 @@ private:
         if (!base) return;
 
         if (isJoy_) {
-            auto * src = dynamic_cast<ControlSignalSource<Joy>*>(base.get());
-            if (!src) return;
-
             Joy msg;
             {
                 std::lock_guard<std::mutex> lk(stateMtx_);
@@ -271,12 +267,9 @@ private:
                     msg.buttons.assign(JOY_BUTTONS, 0);
                 }
             }
-            src->send(msg, cmdOk);
+            base->sendErased(&msg, cmdOk);
 
         } else {
-            auto * src = dynamic_cast<ControlSignalSource<Twist>*>(base.get());
-            if (!src) return;
-
             Twist msg;
             {
                 std::lock_guard<std::mutex> lk(stateMtx_);
@@ -305,7 +298,7 @@ private:
                     msg.linear.z = msg.angular.x = msg.angular.y = v;
                 }
             }
-            src->send(msg, cmdOk);
+            base->sendErased(&msg, cmdOk);
         }
     }
 

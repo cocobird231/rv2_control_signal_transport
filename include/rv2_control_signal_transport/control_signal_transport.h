@@ -29,13 +29,20 @@
 #include <mutex>
 #include <functional>
 #include <optional>
+#include <typeindex>
+#include <typeinfo>
+#include <type_traits>
+#include <string>
+#include <map>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rv2_interfaces/msg/control_signal_const.hpp>
 #include <rv2_interfaces/msg/control_signal_info.hpp>
 #include <rv2_interfaces/msg/service_response_status_const.hpp>
-#include <sensor_msgs/msg/joy.hpp>
-#include <geometry_msgs/msg/twist.hpp>
+// std_msgs::msg::String is used here ONLY as the keep-alive heartbeat message
+// type; it is internal transport infrastructure, NOT a control-signal type
+// binding. Concrete control-signal message/service types (Joy, Twist, ...) are
+// bound only in control_signal_types.cpp via ControlSignalFactory.
 #include <std_msgs/msg/string.hpp>
 
 
@@ -90,6 +97,27 @@ public:
     virtual const msg::ControlSignalInfo& getInfo() const = 0;
 
     /**
+     * @brief Returns the std::type_index of the concrete message type (msgT)
+     *        this source transports.
+     *
+     * Allows callers to identify a source's message type without knowing the
+     * concrete ControlSignalSource<msgT, srvT> specialisation.
+     */
+    virtual std::type_index msgType() const = 0;
+
+    /**
+     * @brief Type-erased send().
+     *
+     * @param msg         Pointer to a msgT instance (must match msgType()).
+     * @param cmdSuccess  Output flag; see ControlSignalSource::send().
+     * @return true on successful dispatch; false if transport unavailable.
+     *
+     * The pointed-to object must be of the exact message type returned by
+     * msgType(); passing any other type is undefined behaviour.
+     */
+    virtual bool sendErased(const void* msg, bool& cmdSuccess) = 0;
+
+    /**
      * @brief Transition this source to the terminal DISCONNECTED state.
      *
      * Called by the CSM when the source has been in TIMEOUT longer than
@@ -110,6 +138,14 @@ public:
 class BaseControlSignalSink
 {
 public:
+    /**
+     * Type-erased per-message callback signature used by setErasedMsgCallback().
+     * The first argument points to the concrete msgT instance that was received
+     * (matching msgType()); the second is the Sink's ControlSignalInfo.
+     */
+    using ErasedMsgCb =
+        std::function<void(const void* /*msg*/, const msg::ControlSignalInfo&)>;
+
     BaseControlSignalSink() = default;
     virtual ~BaseControlSignalSink() = default;
 
@@ -128,6 +164,31 @@ public:
      * @brief Returns the ControlSignalInfo this sink was constructed from.
      */
     virtual const msg::ControlSignalInfo& getInfo() const = 0;
+
+    /**
+     * @brief Returns the std::type_index of the concrete message type (msgT)
+     *        this sink transports.
+     */
+    virtual std::type_index msgType() const = 0;
+
+    /**
+     * @brief Type-erased read().
+     *
+     * @param outMsg  Pointer to a msgT instance to populate (must match msgType()).
+     * @return same semantics as ControlSignalSink::read().
+     *
+     * The pointed-to object must be of the exact message type returned by
+     * msgType(); passing any other type is undefined behaviour.
+     */
+    virtual bool readErased(void* outMsg) const = 0;
+
+    /**
+     * @brief Register (or clear) a type-erased per-message callback.
+     *
+     * Lets a consumer attach a callback without knowing the concrete
+     * ControlSignalSink<msgT, srvT> specialisation. Pass nullptr to clear.
+     */
+    virtual void setErasedMsgCallback(ErasedMsgCb cb) = 0;
 
     /**
      * @brief Transition this sink to the terminal DISCONNECTED state.
@@ -365,6 +426,13 @@ public:
     }
 
     const msg::ControlSignalInfo& getInfo() const override { return info_; }
+
+    std::type_index msgType() const override { return std::type_index(typeid(msgT)); }
+
+    bool sendErased(const void* msg, bool& cmdSuccess) override
+    {
+        return send(*static_cast<const msgT*>(msg), cmdSuccess);
+    }
 };
 
 
@@ -438,13 +506,15 @@ private:
             return;
 
         if (info_.timeout_ns > 0 &&
-            (cur == ControlSignalState::ACTIVE || cur == ControlSignalState::LOW_FREQ))
+            (cur == ControlSignalState::UNKNOWN  ||
+             cur == ControlSignalState::ACTIVE   ||
+             cur == ControlSignalState::LOW_FREQ))
         {
             const int64_t elapsed = detail::steadyNs() -
                                     lastActivityNs_.load(std::memory_order_relaxed);
             if (elapsed > info_.timeout_ns)
                 state_.store(ControlSignalState::TIMEOUT, std::memory_order_relaxed);
-            else if (elapsed > info_.timeout_ns / 2)
+            else if (cur != ControlSignalState::UNKNOWN && elapsed > info_.timeout_ns / 2)
                 state_.store(ControlSignalState::LOW_FREQ, std::memory_order_relaxed);
         }
     }
@@ -572,65 +642,28 @@ public:
     }
 
     const msg::ControlSignalInfo& getInfo() const override { return info_; }
+
+    std::type_index msgType() const override { return std::type_index(typeid(msgT)); }
+
+    bool readErased(void* outMsg) const override
+    {
+        return read(*static_cast<msgT*>(outMsg));
+    }
+
+    void setErasedMsgCallback(ErasedMsgCb cb) override
+    {
+        if (cb)
+        {
+            setMsgCallback(
+                [cb](const msgT& m, const msg::ControlSignalInfo& i)
+                { cb(static_cast<const void*>(&m), i); });
+        }
+        else
+        {
+            setMsgCallback(nullptr);
+        }
+    }
 };
-
-
-// ============================================================
-//  Factory functions
-// ============================================================
-
-/**
- * @brief Create a typed ControlSignalSource from a ControlSignalInfo message.
- *
- * Dispatches on info.control_signal_type:
- *  - srvT = void (default): topic-only regardless of info.control_signal_mode.
- *  - srvT provided        : topic or service per info.control_signal_mode.
- *
- * @tparam srvT  Service type; omit (void) for topic-only.
- * @param  node  Parent ROS 2 node.
- * @param  info  Control signal descriptor.
- * @return Shared pointer to BaseControlSignalSource, or nullptr on unknown type.
- */
-template<typename srvT = void>
-std::shared_ptr<BaseControlSignalSource>
-makeControlSignalSource(rclcpp::Node* node, const msg::ControlSignalInfo& info)
-{
-    const auto& type = info.control_signal_type;
-    if (type == msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_JOY)
-        return std::make_shared<ControlSignalSource<sensor_msgs::msg::Joy, srvT>>(node, info);
-    if (type == msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_TWIST)
-        return std::make_shared<ControlSignalSource<geometry_msgs::msg::Twist, srvT>>(node, info);
-    if (type == msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_STRING)
-        return std::make_shared<ControlSignalSource<std_msgs::msg::String, srvT>>(node, info);
-    return nullptr;
-}
-
-
-/**
- * @brief Create a typed ControlSignalSink from a ControlSignalInfo message.
- *
- * Dispatches on info.control_signal_type:
- *  - srvT = void (default): topic-only regardless of info.control_signal_mode.
- *  - srvT provided        : topic or service per info.control_signal_mode.
- *
- * @tparam srvT  Service type; omit (void) for topic-only.
- * @param  node  Parent ROS 2 node.
- * @param  info  Control signal descriptor.
- * @return Shared pointer to BaseControlSignalSink, or nullptr on unknown type.
- */
-template<typename srvT = void>
-std::shared_ptr<BaseControlSignalSink>
-makeControlSignalSink(rclcpp::Node* node, const msg::ControlSignalInfo& info)
-{
-    const auto& type = info.control_signal_type;
-    if (type == msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_JOY)
-        return std::make_shared<ControlSignalSink<sensor_msgs::msg::Joy, srvT>>(node, info);
-    if (type == msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_TWIST)
-        return std::make_shared<ControlSignalSink<geometry_msgs::msg::Twist, srvT>>(node, info);
-    if (type == msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_STRING)
-        return std::make_shared<ControlSignalSink<std_msgs::msg::String, srvT>>(node, info);
-    return nullptr;
-}
 
 
 } // namespace rv2_interfaces
