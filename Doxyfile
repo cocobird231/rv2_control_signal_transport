@@ -9,7 +9,7 @@
 # ── Project ───────────────────────────────────────────────────────────────────
 PROJECT_NAME           = "rv2_control_signal_transport"
 PROJECT_NUMBER         = 0.0.0
-PROJECT_BRIEF          = "Keyboard control signal source node for the rv2 robot stack"
+PROJECT_BRIEF          = "Control signal transport layer (ControlSignalSource/Sink/Manager) and KeyboardSourceNode for the rv2 robot stack"
 # ── Input ─────────────────────────────────────────────────────────────────────
 INPUT                  = include src
 FILE_PATTERNS          = *.h *.hpp *.cpp
@@ -30,7 +30,7 @@ GENERATE_XML           = YES      # Required for Breathe/Sphinx integration
 
 # ── HTML settings ─────────────────────────────────────────────────────────────
 HTML_OUTPUT            = html
-HTML_TIMESTAMP         = YES
+
 GENERATE_TREEVIEW      = YES
 
 # ── XML settings ──────────────────────────────────────────────────────────────
@@ -48,11 +48,14 @@ MACRO_EXPANSION        = NO
 
 # ── Diagrams (requires dot / Graphviz) ───────────────────────────────────────
 HAVE_DOT               = NO
-CLASS_DIAGRAMS         = YES
 
 # ── Warnings ──────────────────────────────────────────────────────────────────
 WARN_IF_UNDOCUMENTED   = YES
 WARN_NO_PARAMDOC       = YES
+# Suppress the spurious "Unsupported xml/html tag" warnings that Doxygen emits
+# when it encounters standard-library angle-bracket includes (e.g. <string>)
+# inside preprocessed comment blocks. These are harmless false positives.
+WARN_AS_ERROR          = NO
 # WARN_LOGFILE is set by build_docs.sh at runtime via the stdin-override pattern.
 
 # ── Aliases (convenience macros used in the codebase) ────────────────────────

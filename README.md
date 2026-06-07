@@ -8,9 +8,12 @@ ROS 2 package that provides the **ControlSignalManager / ControlSignalSource / C
 
 | Path | Description |
 |---|---|
-| `include/rv2_control_signal_transport/control_signal_transport.h` | Core transport primitives: `ControlSignalSource`, `ControlSignalSink`, base classes, factories |
+| `include/rv2_control_signal_transport/control_signal_transport.h` | Core transport primitives: `ControlSignalSource`, `ControlSignalSink`, base classes |
+| `include/rv2_control_signal_transport/control_signal_factory.h` | `ControlSignalFactory` singleton registry + `REGISTER_CONTROL_SIGNAL` macro |
 | `include/rv2_control_signal_transport/control_signal_manager.h` | `ControlSignalManager` — multi-source/sink registry with auto-disconnect |
 | `include/rv2_control_signal_transport/keyboard_handler.h` | Linux evdev keyboard reader (`KeyboardHandler`) |
+| `src/control_signal_factory.cpp` | `ControlSignalFactory::Instance()` definition (shared-library singleton) |
+| `src/control_signal_types.cpp` | Concrete type registrations (Joy, Twist, String) via `REGISTER_CONTROL_SIGNAL` |
 | `src/keyboard_source_node.cpp` | `KeyboardSourceNode` composable node |
 | `config/keyboard_source.yaml` | Default parameter file (generic) |
 | `config/keyboard_source_joy.yaml` | Default parameter file for Joy mode |
@@ -196,14 +199,13 @@ ros2 launch rv2_control_signal_transport keyboard_source.launch.py \
     config_file:=/path/to/my_keyboard_source.yaml
 ```
 
-### Using as a library (header-only)
+### Using as a library
 
 ```cpp
 #include "rv2_control_signal_transport/control_signal_manager.h"
+#include "rv2_control_signal_transport/control_signal_factory.h"
 
-// Source side
-auto csm = std::make_unique<rv2_interfaces::ControlSignalManager>(node, "my_csm", 1000);
-
+// Source side — build info descriptor
 rv2_interfaces::msg::ControlSignalInfo info;
 info.target_csm_name       = "control_server";
 info.control_signal_mode   = rv2_interfaces::msg::ControlSignalConst::CONTROL_SIGNAL_MODE_TOPIC;
@@ -214,13 +216,25 @@ info.timeout_ns            = 2'000'000'000LL;
 info.disconnect_timeout_ns = 10'000'000'000LL;
 info.priority              = 50;
 
-csm->registerSource(info, 5000);  // blocks; node must be spinning
+// Register source with the target CSM — blocks until response; node must be spinning
+auto csm = std::make_unique<rv2_interfaces::ControlSignalManager>(node, "my_csm", 1000);
+csm->registerSource(info, 5000);
 
-// Send
+// Option A: type-erased send via BaseControlSignalSource::sendErased()
+//           (correct regardless of srvT — no cast required)
 auto base = csm->getSource("my_channel");
-auto* src = dynamic_cast<rv2_interfaces::ControlSignalSource<sensor_msgs::msg::Joy>*>(base.get());
+if (base) {
+    sensor_msgs::msg::Joy joy_msg;
+    // ... fill joy_msg ...
+    bool ok;
+    base->sendErased(&joy_msg, ok);
+}
+
+// Option B: create a source directly from the factory (bypasses CSM)
+auto src = rv2_interfaces::ControlSignalFactory::Instance()
+    .CreateSource("joy", node, info);  // returns unique_ptr<BaseControlSignalSource>
 bool ok;
-src->send(joy_msg, ok);
+src->sendErased(&joy_msg, ok);
 ```
 
 ### Building

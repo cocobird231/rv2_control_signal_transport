@@ -1,17 +1,17 @@
 /**
- * This document defines an architecture for controlling signal data flow, consisting of Sources, 
+ * This document defines an architecture for controlling signal data flow, consisting of Sources,
  * Sinks, and a ControlSignalManager.
- * Sources and Sinks can be initially configured to operate in either topic mode or service mode, 
+ * Sources and Sinks can be initially configured to operate in either topic mode or service mode,
  * and both support a timeout mechanism.
- * The ControlSignalManager is responsible for managing the registration information of Sources 
- * and Sinks, and generating corresponding Sinks and Sources accordingly. It supports multiple 
+ * The ControlSignalManager is responsible for managing the registration information of Sources
+ * and Sinks, and generating corresponding Sinks and Sources accordingly. It supports multiple
  * registrations of Sources and Sinks and maintains their states, such as timeout status.
- * 
- * - ControlSignalSource: 
+ *
+ * - `ControlSignalSource`:
  *      Can act as a publisher (topic mode) or a client (service mode).
- * - ControlSignalSink:
+ * - `ControlSignalSink`:
  *      Can act as a subscriber (topic mode) or a server (service mode).
- * - ControlSignalManager:
+ * - `ControlSignalManager`:
  *      - Accepts API requests to register Sources and sends the registration information to a target ControlSignalManager via service calls
  *      - The target ControlSignalManager generates the corresponding Sink based on the registration information
  *      - Maintains the states of both Sources and Sinks
@@ -259,7 +259,7 @@ struct ServicePtrOf<void> { using type = std::monostate; };
  *   │                  │ (state set directly in send()) │ TIMEOUT otherwise                   │
  *   └──────────────────┴────────────────────────────────┴─────────────────────────────────────┘
  *
- * Keep-alive (Source side): subscribes to <channel_name>_keep_alive
+ * Keep-alive (Source side): subscribes to `<channel_name>_keep_alive`
  *   (std_msgs::msg::String). Any received message calls _markActivity().
  *   Works in both topic and service modes.
  *
@@ -454,7 +454,7 @@ public:
  *
  * Keep-alive (Sink side):
  *   When use_keep_alive == true and keep_alive_interval_ns > 0, a
- *   Publisher<std_msgs::msg::String> on <channel_name>_keep_alive is created
+ *   Publisher<std_msgs::msg::String> on `<channel_name>_keep_alive` is created
  *   together with a wall timer that fires every keep_alive_interval_ns nanoseconds.
  *   The timer publishes an empty heartbeat and runs _checkTimeout().
  *   Works in both topic and service modes.

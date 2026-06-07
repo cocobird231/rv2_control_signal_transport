@@ -62,7 +62,7 @@ graph LR
         SS -->|"response"| SC
     end
 
-    subgraph TypeMap["訊息型別 ↔ Service 型別"]
+    subgraph TypeMap["訊息型別 ↔ Service 型別 (ControlSignalFactory registry)"]
         direction TB
         J["joy<br/>Joy ↔ ControlSignalJoy"]
         TW["twist<br/>Twist ↔ ControlSignalTwist"]
@@ -154,6 +154,17 @@ classDiagram
         -_initTransport()
     }
 
+    class ControlSignalFactory {
+        <<singleton>>
+        -registry_ : unordered_map string Entry
+        -reverseRegistry_ : unordered_map type_index string
+        +Instance() ControlSignalFactory
+        +Register(name) void
+        +CreateSource(name, node, info) unique_ptr BaseSource
+        +CreateSink(name, node, info) unique_ptr BaseSink
+        +typeKey(type_index) string
+    }
+
     class ControlSignalManager {
         -node_ : Node ptr
         -name_ : string
@@ -185,8 +196,12 @@ classDiagram
     BaseControlSignalSource <|-- ControlSignalSource : inherits
     BaseControlSignalSink   <|-- ControlSignalSink   : inherits
 
+    ControlSignalFactory ..> ControlSignalSource : creates
+    ControlSignalFactory ..> ControlSignalSink   : creates
+
     ControlSignalManager "1" o-- "0..*" BaseControlSignalSource : sources_
     ControlSignalManager "1" o-- "0..*" BaseControlSignalSink   : sinks_
+    ControlSignalManager ..> ControlSignalFactory : delegates _makeSource/_makeSink
 
     ControlSignalSource ..> ControlSignalInfo : reads
     ControlSignalSink   ..> ControlSignalInfo : reads
@@ -761,49 +776,155 @@ bool read(msgT& outMsg) const
 
 ---
 
-### 6.8 Factory Functions
+### 6.8 ControlSignalFactory
 
-提供從 `ControlSignalInfo` 動態建立 Source/Sink 的工廠函式，依 `control_signal_type` 分派。
-
-#### `makeControlSignalSource<srvT>()`
+`ControlSignalFactory` is a **process-wide singleton** that maps a runtime type string to compile-time `(MsgT, SrvT)` creator lambdas. It is populated at program startup via `REGISTER_CONTROL_SIGNAL` and used at runtime by `ControlSignalManager._makeSource()` / `_makeSink()`.
 
 ```cpp
-template<typename srvT = void>
-std::shared_ptr<BaseControlSignalSource>
-makeControlSignalSource(rclcpp::Node* node, const msg::ControlSignalInfo& info)
+class ControlSignalFactory
+{
+public:
+    static ControlSignalFactory& Instance();
+
+    template<typename MsgT, typename SrvT = void>
+    void Register(const std::string& name);
+
+    std::unique_ptr<BaseControlSignalSource>
+    CreateSource(
+        const std::string& name,
+        rclcpp::Node* node,
+        const msg::ControlSignalInfo& info);
+
+    std::unique_ptr<BaseControlSignalSink>
+    CreateSink(
+        const std::string& name,
+        rclcpp::Node* node,
+        const msg::ControlSignalInfo& info);
+
+    std::string typeKey(std::type_index msgTypeIndex) const;
+};
 ```
 
-| Template 參數 | 說明 |
-|--------------|------|
-| `srvT` | 服務型別；省略（`void`）表示 Topic 模式 |
+#### `Instance()`
 
-| 參數 | 說明 |
-|------|------|
-| `node` | 父節點指標 |
-| `info` | 控制訊號描述子 |
+```cpp
+static ControlSignalFactory& Instance();
+```
 
-**回傳**: `BaseControlSignalSource` 的 `shared_ptr`；`control_signal_type` 不支援時返回 `nullptr`
-
-**分派對照**:
-
-| `info.control_signal_type` | 建立型別 |
-|---------------------------|---------|
-| `"joy"` | `ControlSignalSource<Joy, srvT>` |
-| `"twist"` | `ControlSignalSource<Twist, srvT>` |
-| `"string"` | `ControlSignalSource<String, srvT>` |
-| 其他 | `nullptr` |
+Returns the process-wide singleton. Defined in the shared library (`control_signal_factory.cpp`) so all consumers share a single registry.
 
 ---
 
-#### `makeControlSignalSink<srvT>()`
+#### `Register<MsgT, SrvT>(name)`
 
 ```cpp
-template<typename srvT = void>
-std::shared_ptr<BaseControlSignalSink>
-makeControlSignalSink(rclcpp::Node* node, const msg::ControlSignalInfo& info)
+template<typename MsgT, typename SrvT = void>
+void Register(const std::string& name);
 ```
 
-參數與回傳邏輯同 `makeControlSignalSource`，建立對應的 Sink 實例。
+Registers `ControlSignalSource<MsgT, SrvT>` and `ControlSignalSink<MsgT, SrvT>` creator lambdas under `name`. Also stores the `(typeid(MsgT) → name)` reverse mapping. Called automatically by `REGISTER_CONTROL_SIGNAL` during program startup; re-registration silently overwrites.
+
+---
+
+#### `CreateSource()` / `CreateSink()`
+
+```cpp
+std::unique_ptr<BaseControlSignalSource>
+CreateSource(
+    const std::string& name,
+    rclcpp::Node* node,
+    const msg::ControlSignalInfo& info);
+
+std::unique_ptr<BaseControlSignalSink>
+CreateSink(
+    const std::string& name,
+    rclcpp::Node* node,
+    const msg::ControlSignalInfo& info);
+```
+
+| 參數 | 說明 |
+|------|------|
+| `name` | 已登記的控制訊號型別字串（e.g. `"joy"`） |
+| `node` | 父節點指標 |
+| `info` | 控制訊號描述子 |
+
+**回傳**: 對應型別的 `unique_ptr<BaseControlSignalSource/Sink>`
+
+**未知型別**: 拋出 `std::runtime_error`
+
+---
+
+#### `typeKey()`
+
+```cpp
+std::string typeKey(std::type_index msgTypeIndex) const;
+```
+
+Reverse lookup: returns the registered name string for a given `std::type_index`, or an empty string if not registered.
+
+| `msgTypeIndex` | 回傳值 |
+|---------------|--------|
+| `typeid(Joy)` | `"joy"` |
+| `typeid(Twist)` | `"twist"` |
+| `typeid(String)` | `"string"` |
+| 未登記型別 | `""` |
+
+---
+
+#### `REGISTER_CONTROL_SIGNAL` macro
+
+```cpp
+REGISTER_CONTROL_SIGNAL(UniqueId, name_str, MsgType, SrvType);
+```
+
+在一個 `.cpp` 檔中呼叫，於程式啟動時自動呼叫 `Register<MsgType, SrvType>(name_str)`。
+
+| 參數 | 說明 |
+|------|------|
+| `UniqueId` | 用於命名內部靜態物件的識別子（無引號、無冒號） |
+| `name_str` | 執行期型別字串，如 `"joy"` |
+| `MsgType` | ROS 2 訊息型別 |
+| `SrvType` | ROS 2 服務型別；Topic-only 型別傳入 `void` |
+
+**範例** (摘自 `control_signal_types.cpp`):
+
+```cpp
+// Joy — topic + service transport:
+REGISTER_CONTROL_SIGNAL(
+    Joy,
+    "joy",
+    sensor_msgs::msg::Joy,
+    rv2_interfaces::srv::ControlSignalJoy);
+
+// Twist — topic + service transport:
+REGISTER_CONTROL_SIGNAL(
+    Twist,
+    "twist",
+    geometry_msgs::msg::Twist,
+    rv2_interfaces::srv::ControlSignalTwist);
+
+// String — topic-only (void = no service binding):
+REGISTER_CONTROL_SIGNAL(
+    String,
+    "string",
+    std_msgs::msg::String,
+    void);
+```
+
+**新增自訂型別** (添加至 `control_signal_types.cpp`):
+
+```cpp
+// 1. include the headers
+#include <my_msgs/msg/my_type.hpp>
+#include <rv2_interfaces/srv/control_signal_my_type.hpp>  // optional
+
+// 2. register (at file scope, outside any namespace)
+REGISTER_CONTROL_SIGNAL(
+    MyType,                                        // UniqueId
+    "my_type",                                     // runtime string
+    my_msgs::msg::MyType,                          // MsgType
+    rv2_interfaces::srv::ControlSignalMyType);     // SrvType or void
+```
 
 ---
 
@@ -940,14 +1061,16 @@ template<typename msgT>
 static std::string typeKeyFor()
 ```
 
-**說明**: 靜態工具函式，返回 `msgT` 對應的 `ControlSignalConst` 型別字串。
+**說明**: 靜態工具函式，透過 `ControlSignalFactory::Instance().typeKey()` 返回 `msgT` 對應的 `ControlSignalConst` 型別字串。
 
 | `msgT` | 回傳值 |
 |--------|--------|
 | `sensor_msgs::msg::Joy` | `"joy"` |
 | `geometry_msgs::msg::Twist` | `"twist"` |
 | `std_msgs::msg::String` | `"string"` |
-| 其他 | `"unknown"` |
+| 未登記型別 | `"unknown"` |
+
+> **注意**: `ControlSignalFactory::typeKey()` 回傳空字串表示未登記；此方法將空字串轉換為 `CONTROL_SIGNAL_TYPE_UNKNOWN`。
 
 ---
 
@@ -1004,7 +1127,14 @@ info.disconnect_timeout_ns  = 2'000'000'000LL; // 2 s
 bool ok = csm_a->registerSource(info, 5000);
 // ok == true → csm_a 持有 Source；csm_b 持有 Sink
 
-// ── 傳送訊號 ─────────────────────────────────────────────────
-auto src = csm_a->getSource("/robot/joy");
-// down-cast 或透過 CSM send wrapper 使用
+// ── 傳送訊號 —— 透過 BaseControlSignalSource::sendErased() ──────
+// sendErased() 是 BaseControlSignalSource 上的虛函式，轉發至具體型別的 send()。
+// 不需要知道 srvT，無需 dynamic_cast。
+auto base = csm_a->getSource("/robot/joy");
+if (base) {
+    sensor_msgs::msg::Joy joy;
+    joy.axes = {0.5f, 0.0f, 0.0f, 0.0f};
+    bool cmdOk = false;
+    base->sendErased(&joy, cmdOk);
+}
 ```
