@@ -66,6 +66,12 @@ inline rv2_interfaces::msg::ControlSignalInfo makeInfo(
     info.send_freq_hz           = sendFreqHz;
     info.timeout_ns             = timeoutNs;
     info.disconnect_timeout_ns  = disconnectTimeoutNs;
+    // Required by validateControlSignalInfo rules 7-9; controller_name is the
+    // CSM map key, so derive it from the (unique) channel name.
+    info.controller_name        = "ctrl_" + channel;
+    info.priority               = 40;
+    info.controller_priority_type =
+        rv2_interfaces::msg::ControlSignalConst::CONTROL_SIGNAL_PRIORITY_REMOTE_CUSTOM;
     return info;
 }
 
