@@ -91,6 +91,15 @@ if(BUILD_TESTING)
 
   find_package(ament_cmake_gtest REQUIRED)
 
+  # R1: LivenessState unit tests (design §4.5, L1-L18). Pure logic — no
+  # rclcpp / interface dependencies on purpose (T2.1 check).
+  ament_add_gtest(test_liveness_state
+    test/r1/test_liveness_state.cpp
+  )
+  target_include_directories(test_liveness_state PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+
   # Unit tests for the transport primitives (Source/Sink + factory functions).
   ament_add_gtest(test_control_signal_transport
     test/test_control_signal_transport.cpp
