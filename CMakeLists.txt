@@ -13,6 +13,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(rv2_interfaces REQUIRED)
+find_package(r1_interfaces REQUIRED)
 
 # ── core transport library ────────────────────────────────────────────────────
 # The transport core (control_signal_transport.h / control_signal_manager.h) is
@@ -99,6 +100,28 @@ if(BUILD_TESTING)
   target_include_directories(test_liveness_state PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   )
+
+  # R1: Info validation unit tests (design §3.3, V1-V11). Pure logic — only
+  # the generated message header, no rclcpp init (T3.1 check).
+  ament_add_gtest(test_info_validation
+    test/r1/test_info_validation.cpp
+  )
+  target_include_directories(test_info_validation PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+  ament_target_dependencies(test_info_validation r1_interfaces)
+
+  # R1: Source/Sink transport unit tests (design §5.4 S1-S16 suite SourceTest,
+  # §6.4 K1-K16 suite SinkTest) via the ManagerTestAccess tick simulation.
+  ament_add_gtest(test_transport
+    test/r1/test_transport.cpp
+    TIMEOUT 300
+  )
+  target_include_directories(test_transport PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/r1
+  )
+  ament_target_dependencies(test_transport rclcpp sensor_msgs r1_interfaces)
 
   # Unit tests for the transport primitives (Source/Sink + factory functions).
   ament_add_gtest(test_control_signal_transport
