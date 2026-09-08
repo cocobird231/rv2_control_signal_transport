@@ -183,6 +183,9 @@ private:
     virtual bool _trySealLocalTerminal(const EntityDecision& decision) = 0;
     virtual void _sealTerminal() = 0;                     // forced / matching lifecycle command
     virtual void _applyStatus(const EntityDecision& decision) = 0;
+    /// Manager-side fan-out of the global per-state callback registration
+    /// (§8.2 registerSourceStateCallback) onto the endpoint's slot array.
+    virtual void _setStateCallbackErased(ControlSignalState s, StateCb cb) = 0;
 };
 
 template<typename msgT, typename srvT = void>
@@ -260,6 +263,14 @@ public:
         std::unique_lock<std::shared_mutex> lk(stateCbMtx_);
         stateCbs_[static_cast<size_t>(forState)] = std::move(cb);
     }
+
+private:
+    void _setStateCallbackErased(ControlSignalState s, StateCb cb) override
+    {
+        setStateCallback(s, std::move(cb));
+    }
+
+public:
 
     /// Idempotent: sets the flag, then resets transport under the same lock
     /// used by the send snapshot, so no data race with in-flight sends. An

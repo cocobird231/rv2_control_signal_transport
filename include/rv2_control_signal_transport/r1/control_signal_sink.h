@@ -58,10 +58,16 @@ protected:
 private:
     friend class ControlSignalManager;
     friend struct ManagerTestAccess;
+    friend class SinkHandle;
     virtual EntityDecision _calcStatus(int64_t nowNs) const = 0;
     virtual bool _trySealLocalTerminal(const EntityDecision& decision) = 0;
     virtual void _sealTerminal() = 0;
     virtual void _applyStatus(const EntityDecision& decision) = 0;
+    /// Type-erased waitForMessage forwarding for SinkHandle (outMsg must
+    /// point to the concrete msgT; the handle validates msgType() first).
+    virtual bool _waitForMessageErased(void* outMsg, int64_t timeoutNs) const = 0;
+    /// Manager-side fan-out of the global per-state callback registration.
+    virtual void _setStateCallbackErased(ControlSignalState s, StateCb cb) = 0;
 };
 
 template<typename msgT, typename srvT = void>
@@ -288,6 +294,16 @@ private:
     }
 
     void _sealTerminal() override { liveness_.sealActivity(); }
+
+    bool _waitForMessageErased(void* outMsg, int64_t timeoutNs) const override
+    {
+        return waitForMessage(*static_cast<msgT*>(outMsg), timeoutNs);
+    }
+
+    void _setStateCallbackErased(ControlSignalState s, StateCb cb) override
+    {
+        setStateCallback(s, std::move(cb));
+    }
 
     /// Non-public (D8): CSM tick writes back state and cache; fires the
     /// per-state slot on old != new — copied under a shared lock, called

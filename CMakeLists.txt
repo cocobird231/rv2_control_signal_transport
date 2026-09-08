@@ -37,6 +37,26 @@ ament_target_dependencies(control_signal_transport
   rv2_interfaces
 )
 
+# ── R1 transport library ──────────────────────────────────────────────────────
+# Header-only templates plus the Factory singleton and built-in type
+# registrations (design §7.2). Shared library so the registry has exactly one
+# definition per process (F5).
+add_library(r1_control_signal_transport SHARED
+  src/r1/control_signal_factory.cpp
+  src/r1/control_signal_types.cpp
+)
+target_include_directories(r1_control_signal_transport PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+ament_target_dependencies(r1_control_signal_transport
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+  std_msgs
+  r1_interfaces
+)
+
 # ── keyboard_source (composable node) ─────────────────────────────────────────
 add_library(keyboard_source_component SHARED
   src/keyboard_source_node.cpp
@@ -65,7 +85,7 @@ install(TARGETS keyboard_source_component keyboard_source
 
 # ── public headers + exported library target ──────────────────────────────────
 install(DIRECTORY include/ DESTINATION include)
-install(TARGETS control_signal_transport
+install(TARGETS control_signal_transport r1_control_signal_transport
   EXPORT export_${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -74,7 +94,7 @@ install(TARGETS control_signal_transport
 )
 ament_export_include_directories(include)
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
-ament_export_libraries(control_signal_transport)
+ament_export_libraries(control_signal_transport r1_control_signal_transport)
 ament_export_dependencies(
   rclcpp rclcpp_components
   sensor_msgs geometry_msgs std_msgs
@@ -122,6 +142,32 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/test/r1
   )
   ament_target_dependencies(test_transport rclcpp sensor_msgs r1_interfaces)
+
+  # R1: Factory unit tests (design §7.3, F1-F5); links the shared library so
+  # F5 exercises the cross-TU singleton.
+  ament_add_gtest(test_factory
+    test/r1/test_factory.cpp
+  )
+  target_include_directories(test_factory PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/r1
+  )
+  ament_target_dependencies(test_factory
+    rclcpp sensor_msgs geometry_msgs std_msgs r1_interfaces)
+  target_link_libraries(test_factory r1_control_signal_transport)
+
+  # R1: Manager unit tests (design §8.4, M1-M26).
+  ament_add_gtest(test_manager
+    test/r1/test_manager.cpp
+    TIMEOUT 600
+  )
+  target_include_directories(test_manager PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/r1
+  )
+  ament_target_dependencies(test_manager
+    rclcpp sensor_msgs geometry_msgs std_msgs r1_interfaces)
+  target_link_libraries(test_manager r1_control_signal_transport)
 
   # Unit tests for the transport primitives (Source/Sink + factory functions).
   ament_add_gtest(test_control_signal_transport
