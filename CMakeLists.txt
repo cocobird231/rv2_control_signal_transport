@@ -57,6 +57,18 @@ ament_target_dependencies(r1_control_signal_transport
   r1_interfaces
 )
 
+# ── csm_master_node (standalone executable, §9/§2.1) ─────────────────────────
+add_executable(csm_master_node
+  src/r1/csm_master.cpp
+)
+target_include_directories(csm_master_node PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+ament_target_dependencies(csm_master_node rclcpp r1_interfaces)
+install(TARGETS csm_master_node
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
+)
+
 # ── keyboard_source (composable node) ─────────────────────────────────────────
 add_library(keyboard_source_component SHARED
   src/keyboard_source_node.cpp
@@ -168,6 +180,32 @@ if(BUILD_TESTING)
   ament_target_dependencies(test_manager
     rclcpp sensor_msgs geometry_msgs std_msgs r1_interfaces)
   target_link_libraries(test_manager r1_control_signal_transport)
+
+  # R1: Handle unit tests (design §10.4, H1-H8).
+  ament_add_gtest(test_handles
+    test/r1/test_handles.cpp
+    TIMEOUT 600
+  )
+  target_include_directories(test_handles PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/r1
+  )
+  ament_target_dependencies(test_handles
+    rclcpp sensor_msgs geometry_msgs std_msgs r1_interfaces)
+  target_link_libraries(test_handles r1_control_signal_transport)
+
+  # R1: CsmMaster unit tests (design §9.4, CM1-CM13; mock CSM bare nodes).
+  ament_add_gtest(test_csm_master
+    test/r1/test_csm_master.cpp
+    TIMEOUT 600
+  )
+  target_include_directories(test_csm_master PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/r1
+  )
+  ament_target_dependencies(test_csm_master
+    rclcpp sensor_msgs geometry_msgs std_msgs r1_interfaces)
+  target_link_libraries(test_csm_master r1_control_signal_transport)
 
   # Unit tests for the transport primitives (Source/Sink + factory functions).
   ament_add_gtest(test_control_signal_transport
