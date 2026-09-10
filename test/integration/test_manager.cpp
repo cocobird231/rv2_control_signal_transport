@@ -1,6 +1,6 @@
 /**
  * @file test_manager.cpp
- * @brief M1-M26 unit tests for r1::ControlSignalManager (design §8.4).
+ * @brief M1-M26 integration tests for r1::ControlSignalManager (design §8.4).
  *
  * Twin-node / twin-Manager architecture with a MultiThreadedExecutor
  * spinning in the background. rclcpp timers cannot take a fake clock, so

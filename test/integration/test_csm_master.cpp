@@ -1,6 +1,6 @@
 /**
  * @file test_csm_master.cpp
- * @brief CM1-CM13 unit tests for r1::CsmMaster (design §9.4). Mock CSMs are
+ * @brief CM1-CM13 integration tests for r1::CsmMaster (design §9.4). Mock CSMs are
  *        bare nodes (status publisher + get_notifications server +
  *        register/heartbeat clients) — no real ControlSignalManager.
  */
