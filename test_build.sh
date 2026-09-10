@@ -1,1 +1,0 @@
-../r1_test_framework/test_build.sh

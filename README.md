@@ -245,6 +245,32 @@ colcon build --packages-select rv2_control_signal_transport
 source install/setup.bash
 ```
 
+### Testing
+
+Initialize the package's pinned framework submodule, then run its scripts from
+this package directory. Dependencies, builds, and tests run inside Docker;
+artifacts remain under the ignored `test_env/<distro>/` directory.
+
+```bash
+git submodule update --init --recursive
+./r1_test_framework/test_build.sh
+./r1_test_framework/test_deps.sh
+./r1_test_framework/test_run.sh
+./r1_test_framework/test_clean.sh
+```
+
+`test/unit/` covers LivenessState, Info validation, Source/Sink, Factory, and
+Handle contracts H1–H6, plus the legacy transport primitives. `test/integration/`
+covers Manager registration/callbacks, CsmMaster heartbeat/reconciliation,
+Handle retry lifecycle H7–H8, and the legacy Manager. Shared fixtures live
+directly under `test/`.
+
+Both categories run by default. While the container exists, use
+`./r1_test_framework/test_run.sh -s unit` or `-s integration` to select a category.
+CTest targets retain their original names; `test_handles_lifecycle` holds the
+extracted H7–H8 cases, so the `test_handles` TODO filter still selects all H cases.
+H3 retains its assertion-enabled and `NDEBUG` branches.
+
 ---
 
 ## Dependencies

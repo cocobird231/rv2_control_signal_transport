@@ -1,7 +1,7 @@
 // ============================================================
 //  csm_test_utils.h
 //
-//  Shared gtest helpers for the rv2_control_signal_transport unit tests:
+//  Shared gtest helpers for the rv2_control_signal_transport test suites:
 //    - makeInfo()  : build a ControlSignalInfo with sensible defaults.
 //    - stateName() : human-readable ControlSignalState.
 //    - RclcppEnvironment : inits rclcpp once per binary.

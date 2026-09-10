@@ -127,7 +127,7 @@ if(BUILD_TESTING)
   # R1: LivenessState unit tests (design §4.5, L1-L18). Pure logic — no
   # rclcpp / interface dependencies on purpose (T2.1 check).
   ament_add_gtest(test_liveness_state
-    test/r1/test_liveness_state.cpp
+    test/unit/test_liveness_state.cpp
   )
   target_include_directories(test_liveness_state PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -136,7 +136,7 @@ if(BUILD_TESTING)
   # R1: Info validation unit tests (design §3.3, V1-V11). Pure logic — only
   # the generated message header, no rclcpp init (T3.1 check).
   ament_add_gtest(test_info_validation
-    test/r1/test_info_validation.cpp
+    test/unit/test_info_validation.cpp
   )
   target_include_directories(test_info_validation PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -146,62 +146,75 @@ if(BUILD_TESTING)
   # R1: Source/Sink transport unit tests (design §5.4 S1-S16 suite SourceTest,
   # §6.4 K1-K16 suite SinkTest) via the ManagerTestAccess tick simulation.
   ament_add_gtest(test_transport
-    test/r1/test_transport.cpp
+    test/unit/test_transport.cpp
     TIMEOUT 300
   )
   target_include_directories(test_transport PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/r1
+    ${CMAKE_CURRENT_SOURCE_DIR}/test
   )
   ament_target_dependencies(test_transport rclcpp sensor_msgs r1_interfaces)
 
   # R1: Factory unit tests (design §7.3, F1-F5); links the shared library so
   # F5 exercises the cross-TU singleton.
   ament_add_gtest(test_factory
-    test/r1/test_factory.cpp
+    test/unit/test_factory.cpp
   )
   target_include_directories(test_factory PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/r1
+    ${CMAKE_CURRENT_SOURCE_DIR}/test
   )
   ament_target_dependencies(test_factory
     rclcpp sensor_msgs geometry_msgs std_msgs r1_interfaces)
   target_link_libraries(test_factory r1_control_signal_transport)
 
-  # R1: Manager unit tests (design §8.4, M1-M26).
+  # R1: Manager integration tests (design §8.4, M1-M26).
   ament_add_gtest(test_manager
-    test/r1/test_manager.cpp
+    test/integration/test_manager.cpp
     TIMEOUT 600
   )
   target_include_directories(test_manager PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/r1
+    ${CMAKE_CURRENT_SOURCE_DIR}/test
   )
   ament_target_dependencies(test_manager
     rclcpp sensor_msgs geometry_msgs std_msgs r1_interfaces)
   target_link_libraries(test_manager r1_control_signal_transport)
 
-  # R1: Handle unit tests (design §10.4, H1-H8).
+  # R1: Handle contract unit tests (design §10.4, H1-H6).
   ament_add_gtest(test_handles
-    test/r1/test_handles.cpp
+    test/unit/test_handles.cpp
     TIMEOUT 600
   )
   target_include_directories(test_handles PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/r1
+    ${CMAKE_CURRENT_SOURCE_DIR}/test
   )
   ament_target_dependencies(test_handles
     rclcpp sensor_msgs geometry_msgs std_msgs r1_interfaces)
   target_link_libraries(test_handles r1_control_signal_transport)
 
-  # R1: CsmMaster unit tests (design §9.4, CM1-CM13; mock CSM bare nodes).
+  # R1: Handle retry lifecycle integration tests (design §10.4, H7-H8).
+  ament_add_gtest(test_handles_lifecycle
+    test/integration/test_handles_lifecycle.cpp
+    TIMEOUT 600
+  )
+  target_include_directories(test_handles_lifecycle PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    ${CMAKE_CURRENT_SOURCE_DIR}/test
+  )
+  ament_target_dependencies(test_handles_lifecycle
+    rclcpp sensor_msgs geometry_msgs std_msgs r1_interfaces)
+  target_link_libraries(test_handles_lifecycle r1_control_signal_transport)
+
+  # R1: CsmMaster integration tests (design §9.4, CM1-CM13; mock CSM bare nodes).
   ament_add_gtest(test_csm_master
-    test/r1/test_csm_master.cpp
+    test/integration/test_csm_master.cpp
     TIMEOUT 600
   )
   target_include_directories(test_csm_master PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/r1
+    ${CMAKE_CURRENT_SOURCE_DIR}/test
   )
   ament_target_dependencies(test_csm_master
     rclcpp sensor_msgs geometry_msgs std_msgs r1_interfaces)
@@ -209,7 +222,7 @@ if(BUILD_TESTING)
 
   # Unit tests for the transport primitives (Source/Sink + factory functions).
   ament_add_gtest(test_control_signal_transport
-    test/test_control_signal_transport.cpp
+    test/unit/test_control_signal_transport.cpp
   )
   target_include_directories(test_control_signal_transport PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -219,9 +232,9 @@ if(BUILD_TESTING)
     rclcpp sensor_msgs geometry_msgs std_msgs rv2_interfaces)
   target_link_libraries(test_control_signal_transport control_signal_transport)
 
-  # Unit tests for ControlSignalManager (inter-CSM registration protocol).
+  # Integration tests for ControlSignalManager (inter-CSM registration protocol).
   ament_add_gtest(test_control_signal_manager
-    test/test_control_signal_manager.cpp
+    test/integration/test_control_signal_manager.cpp
   )
   target_include_directories(test_control_signal_manager PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -230,6 +243,16 @@ if(BUILD_TESTING)
   ament_target_dependencies(test_control_signal_manager
     rclcpp sensor_msgs geometry_msgs std_msgs rv2_interfaces)
   target_link_libraries(test_control_signal_manager control_signal_transport)
+
+  # Append category labels without replacing ament's existing gtest labels.
+  foreach(unit_test test_liveness_state test_info_validation test_transport
+                    test_factory test_handles test_control_signal_transport)
+    set_property(TEST ${unit_test} APPEND PROPERTY LABELS unit)
+  endforeach()
+  foreach(integration_test test_manager test_handles_lifecycle test_csm_master
+                           test_control_signal_manager)
+    set_property(TEST ${integration_test} APPEND PROPERTY LABELS integration)
+  endforeach()
 endif()
 
 ament_package()
