@@ -34,11 +34,15 @@ namespace r1
 
 namespace detail
 {
-template<typename srvT>
-struct ServicePtrOf { using type = typename rclcpp::Service<srvT>::SharedPtr; };
-template<>
-struct ServicePtrOf<void> { using type = std::monostate; };
-} // namespace detail
+template <typename srvT> struct ServicePtrOf
+{
+    using type = typename rclcpp::Service<srvT>::SharedPtr;
+};
+template <> struct ServicePtrOf<void>
+{
+    using type = std::monostate;
+};
+}  // namespace detail
 
 class BaseControlSignalSink
 {
@@ -48,7 +52,7 @@ public:
     virtual ControlSignalState getState() const = 0;
     virtual const ControlSignalInfo& getInfo() const = 0;
     virtual std::type_index msgType() const = 0;
-    virtual bool readErased(void* outMsg) const = 0;   // true only while ACTIVE
+    virtual bool readErased(void* outMsg) const = 0;  // true only while ACTIVE
     virtual void setErasedMsgCallback(ErasedMsgCb cb) = 0;
     virtual void shutdown() = 0;
 
@@ -70,14 +74,13 @@ private:
     virtual void _setStateCallbackErased(ControlSignalState s, StateCb cb) = 0;
 };
 
-template<typename msgT, typename srvT = void>
-class ControlSignalSink
-    : public BaseControlSignalSink,
-      public std::enable_shared_from_this<ControlSignalSink<msgT, srvT>>
+template <typename msgT, typename srvT = void>
+class ControlSignalSink : public BaseControlSignalSink,
+                          public std::enable_shared_from_this<ControlSignalSink<msgT, srvT>>
 {
     friend class ControlSignalManager;
     friend class ControlSignalFactory;
-    friend struct ManagerTestAccess;     // test channel (§5.4)
+    friend struct ManagerTestAccess;  // test channel (§5.4)
 
 public:
     using MsgCb = std::function<void(const msgT&, const InfoT&)>;
@@ -117,16 +120,16 @@ public:
         bool ok = false;
         {
             std::unique_lock<std::mutex> lk(msgMtx_);
-            const auto pred = [&] {
-                return msgSeq_.load(std::memory_order_relaxed) > seq0 ||
-                       shutdown_.load(std::memory_order_relaxed);
+            const auto pred = [&]
+            {
+                return msgSeq_.load(std::memory_order_relaxed) > seq0 || shutdown_.load(std::memory_order_relaxed);
             };
             if (timeoutNs <= 0)
                 msgCv_.wait(lk, pred);
             else
                 msgCv_.wait_for(lk, std::chrono::nanoseconds(timeoutNs), pred);
-            if (msgSeq_.load(std::memory_order_relaxed) > seq0 &&
-                !shutdown_.load(std::memory_order_relaxed) && latestMsg_)
+            if (msgSeq_.load(std::memory_order_relaxed) > seq0 && !shutdown_.load(std::memory_order_relaxed) &&
+                latestMsg_)
             {
                 out = *latestMsg_;
                 ok = true;
@@ -136,12 +139,12 @@ public:
         return ok;
     }
 
-    float dataRateHz() const   // cached only, never triggers a computation
+    float dataRateHz() const  // cached only, never triggers a computation
     {
         return cachedRateHz_.load(std::memory_order_relaxed);
     }
 
-    EntityStatus getStatus() const   // {state, cachedRate} combined query
+    EntityStatus getStatus() const  // {state, cachedRate} combined query
     {
         return {liveness_.state(), cachedRateHz_.load(std::memory_order_relaxed)};
     }
@@ -157,10 +160,7 @@ public:
     const ControlSignalInfo& getInfo() const override { return info_; }
     std::type_index msgType() const override { return typeid(msgT); }
 
-    bool readErased(void* outMsg) const override
-    {
-        return read(*static_cast<msgT*>(outMsg));
-    }
+    bool readErased(void* outMsg) const override { return read(*static_cast<msgT*>(outMsg)); }
 
     void setErasedMsgCallback(ErasedMsgCb cb) override
     {
@@ -170,9 +170,11 @@ public:
             return;
         }
         const ControlSignalInfo& info = info_;
-        setMsgCallback([cb = std::move(cb), &info](const msgT& m, const InfoT&) {
-            cb(&m, info);
-        });
+        setMsgCallback(
+            [cb = std::move(cb), &info](const msgT& m, const InfoT&)
+            {
+                cb(&m, info);
+            });
     }
 
     /// Install / replace the per-state transition callback slot; nullptr
@@ -208,13 +210,13 @@ private:
     /// The transport is bound in _bindTransport() right after make_shared —
     /// enable_shared_from_this is unusable inside the constructor and the
     /// receive lambda must capture weak_ptr only, never this (§6.3).
-    ControlSignalSink(rclcpp::Node* node, const ControlSignalInfo& info,
-                      int64_t rateWindowNs = 1'000'000'000)
-        : node_(node)
-        , info_(info)
-        , liveness_(steadyNowNs())
-        , rate_(rateWindowNs)
-    {}
+    ControlSignalSink(rclcpp::Node* node, const ControlSignalInfo& info, int64_t rateWindowNs = 1'000'000'000) :
+        node_(node),
+        info_(info),
+        liveness_(steadyNowNs()),
+        rate_(rateWindowNs)
+    {
+    }
 
     void _bindTransport()
     {
@@ -222,19 +224,21 @@ private:
         std::lock_guard<std::mutex> lk(transportMtx_);
         if (info_.mode == ControlSignalInfo::MODE_TOPIC)
         {
-            transport_ = node_->create_subscription<msgT>(
-                info_.channel_name, rclcpp::QoS(10),
-                [weak](const msgT& m) {
-                    if (auto self = weak.lock())   // lock failure: plain return
-                        self->_store(m);
-                });
+            transport_ =
+                node_->create_subscription<msgT>(info_.channel_name,
+                                                 rclcpp::QoS(10),
+                                                 [weak](const msgT& m)
+                                                 {
+                                                     if (auto self = weak.lock())  // lock failure: plain return
+                                                         self->_store(m);
+                                                 });
         }
         else if constexpr (!std::is_void_v<srvT>)
         {
             transport_ = node_->create_service<srvT>(
                 info_.channel_name,
-                [weak](const std::shared_ptr<typename srvT::Request> req,
-                       std::shared_ptr<typename srvT::Response> res) {
+                [weak](const std::shared_ptr<typename srvT::Request> req, std::shared_ptr<typename srvT::Response> res)
+                {
                     // Store first, then answer SRV_RES_SUCCESS (§6.3) —
                     // like topic mode this only records.
                     if (auto self = weak.lock())
@@ -278,14 +282,11 @@ private:
     EntityDecision _calcStatus(int64_t nowNs) const override
     {
         const float hz = rate_.calcHz(nowNs);
-        const LivenessDecision base =
-            liveness_.calcState(nowNs, info_.timeout_ns, info_.disconnect_timeout_ns);
+        const LivenessDecision base = liveness_.calcState(nowNs, info_.timeout_ns, info_.disconnect_timeout_ns);
         return {{base.state, hz},
                 base.observedActivityGeneration,
                 0,
-                base.state == ControlSignalState::DISCONNECTED
-                    ? LivenessCause::INACTIVITY
-                    : LivenessCause::NONE};
+                base.state == ControlSignalState::DISCONNECTED ? LivenessCause::INACTIVITY : LivenessCause::NONE};
     }
 
     bool _trySealLocalTerminal(const EntityDecision& decision) override
@@ -300,10 +301,7 @@ private:
         return waitForMessage(*static_cast<msgT*>(outMsg), timeoutNs);
     }
 
-    void _setStateCallbackErased(ControlSignalState s, StateCb cb) override
-    {
-        setStateCallback(s, std::move(cb));
-    }
+    void _setStateCallbackErased(ControlSignalState s, StateCb cb) override { setStateCallback(s, std::move(cb)); }
 
     /// Non-public (D8): CSM tick writes back state and cache; fires the
     /// per-state slot on old != new — copied under a shared lock, called
@@ -323,26 +321,26 @@ private:
             cb(info_.controller_name, old, decision.status.state);
     }
 
-    rclcpp::Node*                node_;
-    ControlSignalInfo            info_;
-    mutable std::mutex           transportMtx_;   // guards transport_ reset only
-    TransportVariant             transport_;
-    LivenessState                liveness_;
-    mutable std::mutex           msgMtx_;         // guards latestMsg_ (+ cv)
-    std::optional<msgT>          latestMsg_;
-    mutable std::mutex           cbMtx_;          // guards msgCb_ only
-    MsgCb                        msgCb_;
-    std::atomic<bool>            shutdown_{false};
-    detail::RateRecorder         rate_;           // receive rolling window (§6.2)
-    std::atomic<float>           cachedRateHz_{0.f};   // written by _applyStatus()
-    std::array<StateCb, 4>       stateCbs_;       // per-state slots (§6.2)
-    mutable std::shared_mutex    stateCbMtx_;
-    std::atomic<uint64_t>        msgSeq_{0};      // waitForMessage sequence
-    mutable std::condition_variable msgCv_;       // msgMtx_ is its lock
-    mutable std::atomic<uint64_t>   waiters_{0};  // destructor drain (§6.3)
+    rclcpp::Node* node_;
+    ControlSignalInfo info_;
+    mutable std::mutex transportMtx_;  // guards transport_ reset only
+    TransportVariant transport_;
+    LivenessState liveness_;
+    mutable std::mutex msgMtx_;  // guards latestMsg_ (+ cv)
+    std::optional<msgT> latestMsg_;
+    mutable std::mutex cbMtx_;  // guards msgCb_ only
+    MsgCb msgCb_;
+    std::atomic<bool> shutdown_{false};
+    detail::RateRecorder rate_;  // receive rolling window (§6.2)
+    std::atomic<float> cachedRateHz_{0.f};  // written by _applyStatus()
+    std::array<StateCb, 4> stateCbs_;  // per-state slots (§6.2)
+    mutable std::shared_mutex stateCbMtx_;
+    std::atomic<uint64_t> msgSeq_{0};  // waitForMessage sequence
+    mutable std::condition_variable msgCv_;  // msgMtx_ is its lock
+    mutable std::atomic<uint64_t> waiters_{0};  // destructor drain (§6.3)
 };
 
-} // namespace r1
-} // namespace rv2_interfaces
+}  // namespace r1
+}  // namespace rv2_interfaces
 
-#endif // RV2_CONTROL_SIGNAL_TRANSPORT_R1_CONTROL_SIGNAL_SINK_H
+#endif  // RV2_CONTROL_SIGNAL_TRANSPORT_R1_CONTROL_SIGNAL_SINK_H

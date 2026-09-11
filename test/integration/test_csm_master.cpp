@@ -38,8 +38,7 @@ constexpr int64_t kMs = 1'000'000;
 
 bool waitFor(const std::function<bool()>& cond, int64_t timeoutMs = 5000)
 {
-    const auto deadline =
-        std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
     while (std::chrono::steady_clock::now() < deadline)
     {
         if (cond())
@@ -52,14 +51,14 @@ bool waitFor(const std::function<bool()>& cond, int64_t timeoutMs = 5000)
 /// Bare-node mock CSM (§9.4).
 struct MockCsm
 {
-    MockCsm(rclcpp::Node* node, const std::string& masterName,
-            const std::string& name, const std::string& instance)
-        : node_(node), name_(name), instance_(instance)
+    MockCsm(rclcpp::Node* node, const std::string& masterName, const std::string& name, const std::string& instance) :
+        node_(node),
+        name_(name),
+        instance_(instance)
     {
         regCli_ = node->create_client<CsmRegisterSrv>(masterName + "/register");
         hbCli_ = node->create_client<CsmHeartbeatSrv>(masterName + "/heartbeat");
-        statusPub_ = node->create_publisher<ManagerStatusT>(name + "/status",
-                                                            rclcpp::QoS(10));
+        statusPub_ = node->create_publisher<ManagerStatusT>(name + "/status", rclcpp::QoS(10));
         makeNotifyService();
     }
 
@@ -67,8 +66,8 @@ struct MockCsm
     {
         notifySrv_ = node_->create_service<CsmNotifySrv>(
             name_ + "/get_notifications",
-            [this](const std::shared_ptr<CsmNotifySrv::Request> rq,
-                   std::shared_ptr<CsmNotifySrv::Response> rs) {
+            [this](const std::shared_ptr<CsmNotifySrv::Request> rq, std::shared_ptr<CsmNotifySrv::Response> rs)
+            {
                 std::lock_guard<std::mutex> lk(mtx_);
                 notifications_.push_back(*rq);
                 rs->response = scriptedResponse_;
@@ -84,8 +83,7 @@ struct MockCsm
     {
         auto rq = std::make_shared<CsmRegisterSrv::Request>();
         rq->csm_name = name_;
-        rq->csm_instance_id =
-            instanceOverride.empty() ? instance_ : instanceOverride;
+        rq->csm_instance_id = instanceOverride.empty() ? instance_ : instanceOverride;
         rq->csm_timeout_ns = timeoutNs;
         rq->csm_disconnect_timeout_ns = disconnectNs;
         rq->status_interval_ns = intervalNs;
@@ -102,8 +100,7 @@ struct MockCsm
     {
         auto rq = std::make_shared<CsmHeartbeatSrv::Request>();
         rq->csm_name = name_;
-        rq->csm_instance_id =
-            instanceOverride.empty() ? instance_ : instanceOverride;
+        rq->csm_instance_id = instanceOverride.empty() ? instance_ : instanceOverride;
         auto f = hbCli_->async_send_request(rq);
         if (f.wait_for(3s) != std::future_status::ready)
             return -1;
@@ -113,13 +110,15 @@ struct MockCsm
     void startHeartbeatLoop(int64_t periodMs = 100)
     {
         stopHb_.store(false);
-        hbThread_ = std::thread([this, periodMs] {
-            while (!stopHb_.load())
+        hbThread_ = std::thread(
+            [this, periodMs]
             {
-                (void)heartbeat();
-                std::this_thread::sleep_for(std::chrono::milliseconds(periodMs));
-            }
-        });
+                while (!stopHb_.load())
+                {
+                    (void)heartbeat();
+                    std::this_thread::sleep_for(std::chrono::milliseconds(periodMs));
+                }
+            });
     }
     void stopHeartbeatLoop()
     {
@@ -129,14 +128,14 @@ struct MockCsm
     }
 
     void publish(const std::vector<EntryStatusT>& sources,
-                 const std::vector<EntryStatusT>& sinks, bool ready = true,
+                 const std::vector<EntryStatusT>& sinks,
+                 bool ready = true,
                  std::optional<uint64_t> seqOverride = {},
                  const std::string& instanceOverride = "")
     {
         ManagerStatusT m;
         m.manager_name = name_;
-        m.csm_instance_id =
-            instanceOverride.empty() ? instance_ : instanceOverride;
+        m.csm_instance_id = instanceOverride.empty() ? instance_ : instanceOverride;
         m.snapshot_seq = seqOverride ? *seqOverride : ++seq_;
         m.snapshot_ready = ready;
         m.sources = sources;
@@ -184,11 +183,14 @@ protected:
         uid_ = "cm" + std::to_string(counter_++);
         masterNode_ = std::make_shared<rclcpp::Node>("master_" + uid_);
         csmNode_ = std::make_shared<rclcpp::Node>("mockcsm_" + uid_);
-        executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>(
-            rclcpp::ExecutorOptions(), 4);
+        executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>(rclcpp::ExecutorOptions(), 4);
         executor_->add_node(masterNode_);
         executor_->add_node(csmNode_);
-        spin_ = std::thread([this] { executor_->spin(); });
+        spin_ = std::thread(
+            [this]
+            {
+                executor_->spin();
+            });
         while (!executor_->is_spinning())
             std::this_thread::sleep_for(1ms);
 
@@ -199,10 +201,8 @@ protected:
         opt.pairGraceMs = 400;
         master_ = std::make_unique<CsmMaster>(masterNode_.get(), opt);
 
-        a_ = std::make_unique<MockCsm>(csmNode_.get(), masterName(),
-                                       "A_" + uid_, "ai1");
-        b_ = std::make_unique<MockCsm>(csmNode_.get(), masterName(),
-                                       "B_" + uid_, "bi1");
+        a_ = std::make_unique<MockCsm>(csmNode_.get(), masterName(), "A_" + uid_, "ai1");
+        b_ = std::make_unique<MockCsm>(csmNode_.get(), masterName(), "B_" + uid_, "bi1");
     }
 
     void TearDown() override
@@ -221,8 +221,7 @@ protected:
     std::string masterName() const { return "cmaster_" + uid_; }
 
     /// Mirrored source/sink pair entries for controller X.
-    EntryStatusT sourceEntry(const std::string& tag, int8_t state,
-                             uint64_t gen = 1) const
+    EntryStatusT sourceEntry(const std::string& tag, int8_t state, uint64_t gen = 1) const
     {
         EntryStatusT e;
         e.manager_name = a_->name_;
@@ -245,8 +244,7 @@ protected:
         return e;
     }
 
-    EntryStatusT sinkEntry(const std::string& tag, int8_t state,
-                           uint64_t gen = 1) const
+    EntryStatusT sinkEntry(const std::string& tag, int8_t state, uint64_t gen = 1) const
     {
         EntryStatusT e = sourceEntry(tag, state, gen);
         e.manager_name = b_->name_;
@@ -279,8 +277,7 @@ TEST_F(CsmMasterTest, CM1_RegisterHeartbeatRetire)
 {
     ASSERT_EQ(a_->doRegister(), CsmRegisterSrv::Response::RESPONSE_SUCCESS);
     EXPECT_EQ(a_->heartbeat(), CsmHeartbeatSrv::Response::RESPONSE_SUCCESS);
-    EXPECT_EQ(a_->heartbeat("ghost"),
-              CsmHeartbeatSrv::Response::RESPONSE_STALE_INSTANCE);
+    EXPECT_EQ(a_->heartbeat("ghost"), CsmHeartbeatSrv::Response::RESPONSE_STALE_INSTANCE);
     EXPECT_EQ(b_->heartbeat(), CsmHeartbeatSrv::Response::RESPONSE_UNKNOWN_CSM);
 
     // Idempotent same-instance re-register.
@@ -288,19 +285,15 @@ TEST_F(CsmMasterTest, CM1_RegisterHeartbeatRetire)
     // Replacement: new instance retires ai1.
     EXPECT_EQ(a_->doRegister(400 * kMs, 1200 * kMs, 100 * kMs, 400 * kMs, "ai2"),
               CsmRegisterSrv::Response::RESPONSE_SUCCESS);
-    EXPECT_EQ(a_->heartbeat("ai1"),
-              CsmHeartbeatSrv::Response::RESPONSE_STALE_INSTANCE);
+    EXPECT_EQ(a_->heartbeat("ai1"), CsmHeartbeatSrv::Response::RESPONSE_STALE_INSTANCE);
     EXPECT_EQ(a_->doRegister(400 * kMs, 1200 * kMs, 100 * kMs, 400 * kMs, "ai1"),
               CsmRegisterSrv::Response::RESPONSE_STALE_INSTANCE);
-    EXPECT_EQ(a_->heartbeat("ai2"),
-              CsmHeartbeatSrv::Response::RESPONSE_SUCCESS);
+    EXPECT_EQ(a_->heartbeat("ai2"), CsmHeartbeatSrv::Response::RESPONSE_SUCCESS);
 
     // Invalid thresholds refused; the interval/grace fields are consumed by
     // the same validation (record 內含 interval — observable via its rules).
-    EXPECT_EQ(a_->doRegister(500 * kMs, 500 * kMs),
-              CsmRegisterSrv::Response::RESPONSE_INVALID_CONFIG);
-    EXPECT_EQ(a_->doRegister(400 * kMs, 1200 * kMs, 0),
-              CsmRegisterSrv::Response::RESPONSE_INVALID_CONFIG);
+    EXPECT_EQ(a_->doRegister(500 * kMs, 500 * kMs), CsmRegisterSrv::Response::RESPONSE_INVALID_CONFIG);
+    EXPECT_EQ(a_->doRegister(400 * kMs, 1200 * kMs, 0), CsmRegisterSrv::Response::RESPONSE_INVALID_CONFIG);
     EXPECT_EQ(a_->doRegister(400 * kMs, 1200 * kMs, 100 * kMs, 100 * kMs),
               CsmRegisterSrv::Response::RESPONSE_INVALID_CONFIG);
 }
@@ -309,17 +302,15 @@ TEST_F(CsmMasterTest, CM1_RegisterHeartbeatRetire)
 TEST_F(CsmMasterTest, CM2_Filters)
 {
     master_->enableCsmBlacklist({a_->name_});
-    EXPECT_EQ(a_->doRegister(),
-              CsmRegisterSrv::Response::RESPONSE_INVALID_CONFIG);
+    EXPECT_EQ(a_->doRegister(), CsmRegisterSrv::Response::RESPONSE_INVALID_CONFIG);
     EXPECT_FALSE(master_->hasCsm(a_->name_));
     std::this_thread::sleep_for(200ms);
     // No status subscription was created for the refused CSM (doc CM2).
     EXPECT_EQ(csmNode_->count_subscribers(a_->name_ + "/status"), 0u);
     master_->disableCsmBlacklist();
 
-    master_->enableCsmWhitelist({});   // enabled empty = block all
-    EXPECT_EQ(b_->doRegister(),
-              CsmRegisterSrv::Response::RESPONSE_INVALID_CONFIG);
+    master_->enableCsmWhitelist({});  // enabled empty = block all
+    EXPECT_EQ(b_->doRegister(), CsmRegisterSrv::Response::RESPONSE_INVALID_CONFIG);
     master_->disableCsmWhitelist();
     EXPECT_EQ(b_->doRegister(), CsmRegisterSrv::Response::RESPONSE_SUCCESS);
 }
@@ -338,15 +329,16 @@ TEST_F(CsmMasterTest, CM3_StateEdgeNotifiesBothSides)
 
     // Edge: X ACTIVE -> TIMEOUT.
     a_->publish({sourceEntry("x", EntryStatusT::STATE_TIMEOUT)}, {});
-    ASSERT_TRUE(waitFor([&] {
-        return a_->notifyCount(CsmNotifySrv::Request::KIND_STATE) >= 1 &&
-               b_->notifyCount(CsmNotifySrv::Request::KIND_STATE) >= 1;
-    }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return a_->notifyCount(CsmNotifySrv::Request::KIND_STATE) >= 1 &&
+                   b_->notifyCount(CsmNotifySrv::Request::KIND_STATE) >= 1;
+        }));
     bool sawTimeout = false;
     for (const auto& q : b_->notifications())
         for (const auto& e : q.entries)
-            if (e.controller_name == "ctrl_" + uid_ + "_x" &&
-                e.state == EntryStatusT::STATE_TIMEOUT)
+            if (e.controller_name == "ctrl_" + uid_ + "_x" && e.state == EntryStatusT::STATE_TIMEOUT)
                 sawTimeout = true;
     EXPECT_TRUE(sawTimeout);
 }
@@ -361,9 +353,11 @@ TEST_F(CsmMasterTest, CM4_OneShotEdges)
     std::this_thread::sleep_for(300ms);
 
     a_->publish({sourceEntry("x", EntryStatusT::STATE_TIMEOUT)}, {});
-    ASSERT_TRUE(waitFor([&] {
-        return b_->notifyCount(CsmNotifySrv::Request::KIND_STATE) >= 1;
-    }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return b_->notifyCount(CsmNotifySrv::Request::KIND_STATE) >= 1;
+        }));
     const int after1 = b_->notifyCount(CsmNotifySrv::Request::KIND_STATE);
 
     a_->publish({sourceEntry("x", EntryStatusT::STATE_TIMEOUT)}, {});
@@ -372,9 +366,11 @@ TEST_F(CsmMasterTest, CM4_OneShotEdges)
     EXPECT_EQ(b_->notifyCount(CsmNotifySrv::Request::KIND_STATE), after1);
 
     a_->publish({sourceEntry("x", EntryStatusT::STATE_ACTIVE)}, {});
-    ASSERT_TRUE(waitFor([&] {
-        return b_->notifyCount(CsmNotifySrv::Request::KIND_STATE) == after1 + 1;
-    }));   // recovery edge: exactly one more to the peer
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return b_->notifyCount(CsmNotifySrv::Request::KIND_STATE) == after1 + 1;
+        }));  // recovery edge: exactly one more to the peer
     std::this_thread::sleep_for(300ms);
     EXPECT_EQ(b_->notifyCount(CsmNotifySrv::Request::KIND_STATE), after1 + 1);
 }
@@ -392,12 +388,14 @@ TEST_F(CsmMasterTest, CM5_CsmTimeoutWarning)
     // Peer B's notify service is dead first: the warning must survive
     // the RPC loss and arrive after revival.
     b_->killNotify();
-    a_->stopHeartbeatLoop();   // silence > 400 ms
+    a_->stopHeartbeatLoop();  // silence > 400 ms
     std::this_thread::sleep_for(700ms);
     b_->makeNotifyService();
-    ASSERT_TRUE(waitFor([&] {
-        return b_->notifyCount(CsmNotifySrv::Request::KIND_CSM_TIMEOUT) >= 1;
-    }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return b_->notifyCount(CsmNotifySrv::Request::KIND_CSM_TIMEOUT) >= 1;
+        }));
     bool sawWarn = false;
     for (const auto& q : b_->notifications())
         if (q.kind == CsmNotifySrv::Request::KIND_CSM_TIMEOUT &&
@@ -407,13 +405,15 @@ TEST_F(CsmMasterTest, CM5_CsmTimeoutWarning)
 
     // Recovery: heartbeats resume -> reliable ACTIVE clearance.
     a_->startHeartbeatLoop();
-    ASSERT_TRUE(waitFor([&] {
-        for (const auto& q : b_->notifications())
-            if (q.kind == CsmNotifySrv::Request::KIND_CSM_TIMEOUT &&
-                q.peer_csm_health == CsmNotifySrv::Request::PEER_HEALTH_ACTIVE)
-                return true;
-        return false;
-    }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            for (const auto& q : b_->notifications())
+                if (q.kind == CsmNotifySrv::Request::KIND_CSM_TIMEOUT &&
+                    q.peer_csm_health == CsmNotifySrv::Request::PEER_HEALTH_ACTIVE)
+                    return true;
+            return false;
+        }));
 }
 
 // CM6: CSM-level DISCONNECTED (D6) — the peer receives the matching-
@@ -427,23 +427,24 @@ TEST_F(CsmMasterTest, CM6_CsmDisconnected)
     std::this_thread::sleep_for(200ms);
 
     a_->stopHeartbeatLoop();
-    ASSERT_TRUE(waitFor([&] {
-        return b_->notifyCount(CsmNotifySrv::Request::KIND_DISCONNECTED) >= 1;
-    }, 8000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return b_->notifyCount(CsmNotifySrv::Request::KIND_DISCONNECTED) >= 1;
+        },
+        8000));
     bool sawIdentity = false;
     for (const auto& q : b_->notifications())
         if (q.kind == CsmNotifySrv::Request::KIND_DISCONNECTED)
             for (const auto& e : q.entries)
-                if (e.registration_id == "rid_" + uid_ + "_x" &&
-                    e.attempt_generation == 1)
+                if (e.registration_id == "rid_" + uid_ + "_x" && e.attempt_generation == 1)
                     sawIdentity = true;
     EXPECT_TRUE(sawIdentity);
 
     // Old incarnation is fenced out after the verdict (v1.2.1): heartbeat
     // answers STALE and a same-instance status snapshot is dropped whole —
     // no STATE resurrection reaches the peer.
-    EXPECT_EQ(a_->heartbeat(),
-              CsmHeartbeatSrv::Response::RESPONSE_STALE_INSTANCE);
+    EXPECT_EQ(a_->heartbeat(), CsmHeartbeatSrv::Response::RESPONSE_STALE_INSTANCE);
     const int stateBefore = b_->notifyCount(CsmNotifySrv::Request::KIND_STATE);
     // A CHANGED state: without the DISCONNECTED-record fence this snapshot
     // would be accepted and produce STATE edges to both sides.
@@ -468,14 +469,17 @@ TEST_F(CsmMasterTest, CM7_ReadinessGate)
     EXPECT_EQ(b_->notifyCount(CsmNotifySrv::Request::KIND_STATE), 0);
 
     // B not ready yet: the single-sided X must NOT trigger PAIR_MISSING.
-    std::this_thread::sleep_for(600ms);   // > pairGrace
+    std::this_thread::sleep_for(600ms);  // > pairGrace
     EXPECT_EQ(a_->notifyCount(CsmNotifySrv::Request::KIND_PAIR_MISSING), 0);
 
     // B delivers its ready (empty) snapshot: reconciliation starts at once.
     b_->publish({}, {});
-    ASSERT_TRUE(waitFor([&] {
-        return a_->notifyCount(CsmNotifySrv::Request::KIND_PAIR_MISSING) >= 1;
-    }, 8000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return a_->notifyCount(CsmNotifySrv::Request::KIND_PAIR_MISSING) >= 1;
+        },
+        8000));
 }
 
 // CM8: fast-restart reconciliation — B's new instance publishes an empty
@@ -497,17 +501,23 @@ TEST_F(CsmMasterTest, CM8_FastRestartPairMissing)
     // A's notify service down first: the level event survives RPC loss.
     a_->killNotify();
     b_->publish({}, {});
-    std::this_thread::sleep_for(700ms);   // > grace while A is unreachable
+    std::this_thread::sleep_for(700ms);  // > grace while A is unreachable
     a_->makeNotifyService();
-    ASSERT_TRUE(waitFor([&] {
-        return a_->notifyCount(CsmNotifySrv::Request::KIND_PAIR_MISSING) >= 1;
-    }, 8000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return a_->notifyCount(CsmNotifySrv::Request::KIND_PAIR_MISSING) >= 1;
+        },
+        8000));
 
     // Level persists after ACK (delivered-awaiting-observation): with A's
     // snapshot still showing X, the same event resends past the apply grace.
-    ASSERT_TRUE(waitFor([&] {
-        return a_->notifyCount(CsmNotifySrv::Request::KIND_PAIR_MISSING) >= 2;
-    }, 8000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return a_->notifyCount(CsmNotifySrv::Request::KIND_PAIR_MISSING) >= 2;
+        },
+        8000));
     const auto notifs = a_->notifications();
     std::string firstId;
     for (const auto& q : notifs)
@@ -516,7 +526,7 @@ TEST_F(CsmMasterTest, CM8_FastRestartPairMissing)
             if (firstId.empty())
                 firstId = q.event_id;
             else
-                EXPECT_EQ(q.event_id, firstId);   // same level event ID
+                EXPECT_EQ(q.event_id, firstId);  // same level event ID
         }
 
     // A proves removal: the level clears, deliveries stop.
@@ -537,7 +547,7 @@ TEST_F(CsmMasterTest, CM9_NonBlockingRetries)
     std::this_thread::sleep_for(200ms);
 
     b_->killNotify();
-    a_->stopHeartbeatLoop();   // drive a CSM_TIMEOUT control event toward B
+    a_->stopHeartbeatLoop();  // drive a CSM_TIMEOUT control event toward B
     std::this_thread::sleep_for(700ms);
 
     // Master must keep serving while it retries into the void.
@@ -549,9 +559,12 @@ TEST_F(CsmMasterTest, CM9_NonBlockingRetries)
 
     // Revived target eventually receives the pending control event.
     b_->makeNotifyService();
-    ASSERT_TRUE(waitFor([&] {
-        return b_->notifyCount(CsmNotifySrv::Request::KIND_CSM_TIMEOUT) >= 1;
-    }, 8000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return b_->notifyCount(CsmNotifySrv::Request::KIND_CSM_TIMEOUT) >= 1;
+        },
+        8000));
 }
 
 // CM10: omission / sequence rules — seq N+1 omission removes the entry
@@ -566,27 +579,25 @@ TEST_F(CsmMasterTest, CM10_SnapshotOmissionAndSequence)
 
     // Omission: B's next snapshot drops sink X -> tombstone STATE to A.
     b_->publish({}, {});
-    ASSERT_TRUE(waitFor([&] {
-        for (const auto& q : a_->notifications())
-            if (q.kind == CsmNotifySrv::Request::KIND_STATE)
-                for (const auto& e : q.entries)
-                    if (!e.is_source &&
-                        e.state == EntryStatusT::STATE_DISCONNECTED)
-                        return true;
-        return false;
-    }));
-    const auto countAfterTombstone =
-        a_->notifyCount(CsmNotifySrv::Request::KIND_STATE);
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            for (const auto& q : a_->notifications())
+                if (q.kind == CsmNotifySrv::Request::KIND_STATE)
+                    for (const auto& e : q.entries)
+                        if (!e.is_source && e.state == EntryStatusT::STATE_DISCONNECTED)
+                            return true;
+            return false;
+        }));
+    const auto countAfterTombstone = a_->notifyCount(CsmNotifySrv::Request::KIND_STATE);
 
     // Replay of an OLD sequence (still containing X) must be dropped whole.
-    b_->publish({}, {sinkEntry("x", EntryStatusT::STATE_ACTIVE)}, true,
-                uint64_t{1});
+    b_->publish({}, {sinkEntry("x", EntryStatusT::STATE_ACTIVE)}, true, uint64_t{1});
     // Old-instance snapshot equally dropped.
-    b_->publish({}, {sinkEntry("x", EntryStatusT::STATE_ACTIVE)}, true,
-                uint64_t{99}, "bi_old");
+    b_->publish({}, {sinkEntry("x", EntryStatusT::STATE_ACTIVE)}, true, uint64_t{99}, "bi_old");
     std::this_thread::sleep_for(400ms);
     EXPECT_EQ(a_->notifyCount(CsmNotifySrv::Request::KIND_STATE),
-              countAfterTombstone);   // no resurrection edges
+              countAfterTombstone);  // no resurrection edges
 }
 
 // CM11: PENDING transactions suspend the missing grace; completion pairs
@@ -600,7 +611,7 @@ TEST_F(CsmMasterTest, CM11_PendingSuppressesGrace)
     pendingSink.endpoint_present = false;
     b_->publish({}, {pendingSink});
 
-    std::this_thread::sleep_for(1200ms);   // well past every grace
+    std::this_thread::sleep_for(1200ms);  // well past every grace
     EXPECT_EQ(a_->notifyCount(CsmNotifySrv::Request::KIND_PAIR_MISSING), 0);
 
     // Transaction completes: proper pair, still no PAIR_MISSING.
@@ -612,11 +623,14 @@ TEST_F(CsmMasterTest, CM11_PendingSuppressesGrace)
     // notification must not arrive earlier than the minimum grace.
     const auto tRollback = std::chrono::steady_clock::now();
     b_->publish({}, {});
-    ASSERT_TRUE(waitFor([&] {
-        return a_->notifyCount(CsmNotifySrv::Request::KIND_PAIR_MISSING) >= 1;
-    }, 8000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return a_->notifyCount(CsmNotifySrv::Request::KIND_PAIR_MISSING) >= 1;
+        },
+        8000));
     const auto elapsed = std::chrono::steady_clock::now() - tRollback;
-    EXPECT_GE(elapsed, 350ms);   // grace = max(400ms, ...) minus margin
+    EXPECT_GE(elapsed, 350ms);  // grace = max(400ms, ...) minus margin
 }
 
 // CM12: settled ACK classes — ALREADY_APPLIED (and STALE) close the delivery
@@ -626,17 +640,19 @@ TEST_F(CsmMasterTest, CM12_AckClassesSettle)
     registerBoth();
     // Long disconnect: this case must stay in the TIMEOUT/ACTIVE regime —
     // the record may never cross into DISCONNECTED during the settle waits.
-    ASSERT_EQ(a_->doRegister(400 * kMs, 30'000 * kMs),
-              CsmRegisterSrv::Response::RESPONSE_SUCCESS);
+    ASSERT_EQ(a_->doRegister(400 * kMs, 30'000 * kMs), CsmRegisterSrv::Response::RESPONSE_SUCCESS);
     a_->publish({sourceEntry("x", EntryStatusT::STATE_ACTIVE)}, {});
     b_->publish({}, {sinkEntry("x", EntryStatusT::STATE_ACTIVE)});
     std::this_thread::sleep_for(200ms);
 
     b_->scriptedResponse_ = CsmNotifySrv::Response::RESPONSE_ALREADY_APPLIED;
-    a_->stopHeartbeatLoop();   // CSM_TIMEOUT control event toward B
-    ASSERT_TRUE(waitFor([&] {
-        return b_->notifyCount(CsmNotifySrv::Request::KIND_CSM_TIMEOUT) >= 1;
-    }, 8000));
+    a_->stopHeartbeatLoop();  // CSM_TIMEOUT control event toward B
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return b_->notifyCount(CsmNotifySrv::Request::KIND_CSM_TIMEOUT) >= 1;
+        },
+        8000));
     const int settled = b_->notifyCount(CsmNotifySrv::Request::KIND_CSM_TIMEOUT);
     std::this_thread::sleep_for(800ms);
     EXPECT_EQ(b_->notifyCount(CsmNotifySrv::Request::KIND_CSM_TIMEOUT), settled);
@@ -644,14 +660,17 @@ TEST_F(CsmMasterTest, CM12_AckClassesSettle)
     // STALE settles edge events the same way: the ACTIVE clearance answered
     // with STALE is not resent forever.
     b_->scriptedResponse_ = CsmNotifySrv::Response::RESPONSE_STALE;
-    a_->startHeartbeatLoop();   // recovery -> ACTIVE clearance event
-    ASSERT_TRUE(waitFor([&] {
-        for (const auto& q : b_->notifications())
-            if (q.kind == CsmNotifySrv::Request::KIND_CSM_TIMEOUT &&
-                q.peer_csm_health == CsmNotifySrv::Request::PEER_HEALTH_ACTIVE)
-                return true;
-        return false;
-    }, 8000));
+    a_->startHeartbeatLoop();  // recovery -> ACTIVE clearance event
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            for (const auto& q : b_->notifications())
+                if (q.kind == CsmNotifySrv::Request::KIND_CSM_TIMEOUT &&
+                    q.peer_csm_health == CsmNotifySrv::Request::PEER_HEALTH_ACTIVE)
+                    return true;
+            return false;
+        },
+        8000));
     const int settled2 = b_->notifyCount(CsmNotifySrv::Request::KIND_CSM_TIMEOUT);
     std::this_thread::sleep_for(800ms);
     EXPECT_EQ(b_->notifyCount(CsmNotifySrv::Request::KIND_CSM_TIMEOUT), settled2);
@@ -664,8 +683,7 @@ TEST_F(CsmMasterTest, CM13_ZeroThresholds)
     // A: both disabled — silence forever produces no health events.
     ASSERT_EQ(a_->doRegister(0, 0), CsmRegisterSrv::Response::RESPONSE_SUCCESS);
     // B: timeout only (variant B) — warning yes, disconnect never.
-    ASSERT_EQ(b_->doRegister(300 * kMs, 0),
-              CsmRegisterSrv::Response::RESPONSE_SUCCESS);
+    ASSERT_EQ(b_->doRegister(300 * kMs, 0), CsmRegisterSrv::Response::RESPONSE_SUCCESS);
     a_->publish({sourceEntry("x", EntryStatusT::STATE_ACTIVE)}, {});
     b_->publish({}, {sinkEntry("x", EntryStatusT::STATE_ACTIVE)});
     // No heartbeats at all from here on.
@@ -674,23 +692,27 @@ TEST_F(CsmMasterTest, CM13_ZeroThresholds)
     EXPECT_EQ(a_->notifyCount(CsmNotifySrv::Request::KIND_DISCONNECTED), 0);
     // B (timeout=300ms) went TIMEOUT: A gets the warning; A (thresholds 0)
     // never triggers anything toward B.
-    ASSERT_TRUE(waitFor([&] {
-        return a_->notifyCount(CsmNotifySrv::Request::KIND_CSM_TIMEOUT) >= 1;
-    }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return a_->notifyCount(CsmNotifySrv::Request::KIND_CSM_TIMEOUT) >= 1;
+        }));
     EXPECT_EQ(b_->notifyCount(CsmNotifySrv::Request::KIND_CSM_TIMEOUT), 0);
 
     // Variant C for the CSM level (timeout=0, disconnect>0): the silent A
     // goes straight to DISCONNECTED — no phantom TIMEOUT edge on the way
     // (disconnect judged first, §9.3).
-    EXPECT_EQ(a_->doRegister(0, 800 * kMs),
-              CsmRegisterSrv::Response::RESPONSE_SUCCESS);
-    ASSERT_TRUE(waitFor([&] {
-        return b_->notifyCount(CsmNotifySrv::Request::KIND_DISCONNECTED) >= 1;
-    }, 8000));
+    EXPECT_EQ(a_->doRegister(0, 800 * kMs), CsmRegisterSrv::Response::RESPONSE_SUCCESS);
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return b_->notifyCount(CsmNotifySrv::Request::KIND_DISCONNECTED) >= 1;
+        },
+        8000));
     EXPECT_EQ(b_->notifyCount(CsmNotifySrv::Request::KIND_CSM_TIMEOUT), 0);
 }
 
-} // namespace
+}  // namespace
 
 int main(int argc, char** argv)
 {

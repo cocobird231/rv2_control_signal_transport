@@ -35,43 +35,46 @@ inline const char* stateName(rv2_interfaces::ControlSignalState s)
     using S = rv2_interfaces::ControlSignalState;
     switch (s)
     {
-        case S::UNKNOWN:      return "UNKNOWN";
-        case S::ACTIVE:       return "ACTIVE";
-        case S::LOW_FREQ:     return "LOW_FREQ";
-        case S::TIMEOUT:      return "TIMEOUT";
-        case S::DISCONNECTED: return "DISCONNECTED";
+    case S::UNKNOWN:
+        return "UNKNOWN";
+    case S::ACTIVE:
+        return "ACTIVE";
+    case S::LOW_FREQ:
+        return "LOW_FREQ";
+    case S::TIMEOUT:
+        return "TIMEOUT";
+    case S::DISCONNECTED:
+        return "DISCONNECTED";
     }
     return "?";
 }
 
 /// @brief Build a ControlSignalInfo with the same defaults the legacy test used.
-inline rv2_interfaces::msg::ControlSignalInfo makeInfo(
-    const std::string& channel,
-    const std::string& type,
-    const std::string& mode,
-    const std::string& targetCsm           = "",
-    bool               useKeepAlive         = false,
-    int64_t            keepAliveNs          = 300'000'000LL,    // 300 ms
-    int64_t            timeoutNs            = 2'000'000'000LL,  // 2 s
-    float              sendFreqHz           = 0.0f,            // 0 = disabled
-    int64_t            disconnectTimeoutNs  = 0)               // 0 = no auto-disconnect
+inline rv2_interfaces::msg::ControlSignalInfo makeInfo(const std::string& channel,
+                                                       const std::string& type,
+                                                       const std::string& mode,
+                                                       const std::string& targetCsm = "",
+                                                       bool useKeepAlive = false,
+                                                       int64_t keepAliveNs = 300'000'000LL,  // 300 ms
+                                                       int64_t timeoutNs = 2'000'000'000LL,  // 2 s
+                                                       float sendFreqHz = 0.0f,  // 0 = disabled
+                                                       int64_t disconnectTimeoutNs = 0)  // 0 = no auto-disconnect
 {
     rv2_interfaces::msg::ControlSignalInfo info;
-    info.channel_name           = channel;
-    info.control_signal_type    = type;
-    info.control_signal_mode    = mode;
-    info.target_csm_name        = targetCsm;
-    info.use_keep_alive         = useKeepAlive;
+    info.channel_name = channel;
+    info.control_signal_type = type;
+    info.control_signal_mode = mode;
+    info.target_csm_name = targetCsm;
+    info.use_keep_alive = useKeepAlive;
     info.keep_alive_interval_ns = keepAliveNs;
-    info.send_freq_hz           = sendFreqHz;
-    info.timeout_ns             = timeoutNs;
-    info.disconnect_timeout_ns  = disconnectTimeoutNs;
+    info.send_freq_hz = sendFreqHz;
+    info.timeout_ns = timeoutNs;
+    info.disconnect_timeout_ns = disconnectTimeoutNs;
     // Required by validateControlSignalInfo rules 7-9; controller_name is the
     // CSM map key, so derive it from the (unique) channel name.
-    info.controller_name        = "ctrl_" + channel;
-    info.priority               = 40;
-    info.controller_priority_type =
-        rv2_interfaces::msg::ControlSignalConst::CONTROL_SIGNAL_PRIORITY_REMOTE_CUSTOM;
+    info.controller_name = "ctrl_" + channel;
+    info.priority = 40;
+    info.controller_priority_type = rv2_interfaces::msg::ControlSignalConst::CONTROL_SIGNAL_PRIORITY_REMOTE_CUSTOM;
     return info;
 }
 
@@ -112,7 +115,11 @@ protected:
     {
         exec_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
         spinning_ = true;
-        spinThread_ = std::thread([this]() { exec_->spin(); });
+        spinThread_ = std::thread(
+            [this]()
+            {
+                exec_->spin();
+            });
 
         // Wait until the executor has actually entered its spin loop before the
         // test body runs. Without this, a test that does no ROS I/O (e.g. a pure
@@ -121,8 +128,7 @@ protected:
         // forever (cancel-before-spin race). Bounded so a stuck executor cannot
         // hang the suite indefinitely.
         const auto deadline = std::chrono::steady_clock::now() + 5s;
-        while (!exec_->is_spinning() &&
-               std::chrono::steady_clock::now() < deadline)
+        while (!exec_->is_spinning() && std::chrono::steady_clock::now() < deadline)
         {
             std::this_thread::sleep_for(1ms);
         }
@@ -155,9 +161,9 @@ protected:
     }
 
     std::shared_ptr<rclcpp::executors::MultiThreadedExecutor> exec_;
-    std::vector<rclcpp::Node::SharedPtr>                      nodes_;
-    std::thread                                              spinThread_;
-    bool                                                    spinning_ = false;
+    std::vector<rclcpp::Node::SharedPtr> nodes_;
+    std::thread spinThread_;
+    bool spinning_ = false;
 };
 
 }  // namespace rv2_test

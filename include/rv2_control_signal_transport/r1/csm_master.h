@@ -60,42 +60,45 @@ struct PairIdentity
     {
         return std::tie(registration.sourceCsmInstanceId,
                         registration.registrationId,
-                        registration.attemptGeneration, controllerName,
-                        sourceCsmName, targetCsmName, targetCsmInstanceId) <
-               std::tie(o.registration.sourceCsmInstanceId,
-                        o.registration.registrationId,
-                        o.registration.attemptGeneration, o.controllerName,
-                        o.sourceCsmName, o.targetCsmName, o.targetCsmInstanceId);
+                        registration.attemptGeneration,
+                        controllerName,
+                        sourceCsmName,
+                        targetCsmName,
+                        targetCsmInstanceId) < std::tie(o.registration.sourceCsmInstanceId,
+                                                        o.registration.registrationId,
+                                                        o.registration.attemptGeneration,
+                                                        o.controllerName,
+                                                        o.sourceCsmName,
+                                                        o.targetCsmName,
+                                                        o.targetCsmInstanceId);
     }
-    bool operator==(const PairIdentity& o) const
-    {
-        return !(*this < o) && !(o < *this);
-    }
+    bool operator==(const PairIdentity& o) const { return !(*this < o) && !(o < *this); }
 };
 
 struct NotificationRetryPolicy
 {
-    NotificationRetryPolicy(int64_t initialDelayMs_, int64_t maxDelayMs_,
-                            double jitterRatio_, uint32_t maxInFlight_)
-        : initialDelayMs(initialDelayMs_)
-        , maxDelayMs(maxDelayMs_)
-        , jitterRatio(jitterRatio_)
-        , maxInFlight(maxInFlight_)
-    {}
+    NotificationRetryPolicy(int64_t initialDelayMs_, int64_t maxDelayMs_, double jitterRatio_, uint32_t maxInFlight_) :
+        initialDelayMs(initialDelayMs_),
+        maxDelayMs(maxDelayMs_),
+        jitterRatio(jitterRatio_),
+        maxInFlight(maxInFlight_)
+    {
+    }
     int64_t initialDelayMs;
     int64_t maxDelayMs;
     double jitterRatio;
-    uint32_t maxInFlight;   // correctness-critical events have NO attempt cap
+    uint32_t maxInFlight;  // correctness-critical events have NO attempt cap
 };
 
 struct MasterOptions
 {
-    explicit MasterOptions(NotificationRetryPolicy retry)
-        : notificationRetry(std::move(retry))
-    {}
-    std::string masterName    = "csm_master";
-    int64_t tickIntervalMs    = 200;
-    int64_t pairGraceMs       = 1000;   // minimum grace; PENDING suspends the clock
+    explicit MasterOptions(NotificationRetryPolicy retry) :
+        notificationRetry(std::move(retry))
+    {
+    }
+    std::string masterName = "csm_master";
+    int64_t tickIntervalMs = 200;
+    int64_t pairGraceMs = 1000;  // minimum grace; PENDING suspends the clock
     NotificationRetryPolicy notificationRetry;
 };
 
@@ -108,42 +111,72 @@ public:
     using CsmHeartbeatSrv = r1_interfaces::srv::CsmHeartbeat;
     using CsmNotifySrv = r1_interfaces::srv::CsmNotify;
 
-    CsmMaster(rclcpp::Node* node, const MasterOptions& opt)
-        : node_(node), opt_(opt)
+    CsmMaster(rclcpp::Node* node, const MasterOptions& opt) :
+        node_(node),
+        opt_(opt)
     {
         group_ = node_->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
         regSrv_ = node_->create_service<CsmRegisterSrv>(
             opt_.masterName + "/register",
             [this, life = life_](const std::shared_ptr<CsmRegisterSrv::Request> rq,
-                                 std::shared_ptr<CsmRegisterSrv::Response> rs) {
-                if (!life->alive.load()) return;
+                                 std::shared_ptr<CsmRegisterSrv::Response> rs)
+            {
+                if (!life->alive.load())
+                    return;
                 life->active.fetch_add(1);
-                if (!life->alive.load()) { life->active.fetch_sub(1); return; }
-                struct Drop { LifeToken* t; ~Drop() { t->active.fetch_sub(1); } }
-                    drop{life.get()};
+                if (!life->alive.load())
+                {
+                    life->active.fetch_sub(1);
+                    return;
+                }
+                struct Drop
+                {
+                    LifeToken* t;
+                    ~Drop() { t->active.fetch_sub(1); }
+                } drop{life.get()};
                 _onRegister(*rq, *rs);
             },
-            rclcpp::ServicesQoS(), group_);
+            rclcpp::ServicesQoS(),
+            group_);
         hbSrv_ = node_->create_service<CsmHeartbeatSrv>(
             opt_.masterName + "/heartbeat",
             [this, life = life_](const std::shared_ptr<CsmHeartbeatSrv::Request> rq,
-                                 std::shared_ptr<CsmHeartbeatSrv::Response> rs) {
-                if (!life->alive.load()) return;
+                                 std::shared_ptr<CsmHeartbeatSrv::Response> rs)
+            {
+                if (!life->alive.load())
+                    return;
                 life->active.fetch_add(1);
-                if (!life->alive.load()) { life->active.fetch_sub(1); return; }
-                struct Drop { LifeToken* t; ~Drop() { t->active.fetch_sub(1); } }
-                    drop{life.get()};
+                if (!life->alive.load())
+                {
+                    life->active.fetch_sub(1);
+                    return;
+                }
+                struct Drop
+                {
+                    LifeToken* t;
+                    ~Drop() { t->active.fetch_sub(1); }
+                } drop{life.get()};
                 _onHeartbeat(*rq, *rs);
             },
-            rclcpp::ServicesQoS(), group_);
+            rclcpp::ServicesQoS(),
+            group_);
         tick_ = node_->create_wall_timer(
             std::chrono::milliseconds(opt_.tickIntervalMs),
-            [this, life = life_] {
-                if (!life->alive.load()) return;
+            [this, life = life_]
+            {
+                if (!life->alive.load())
+                    return;
                 life->active.fetch_add(1);
-                if (!life->alive.load()) { life->active.fetch_sub(1); return; }
-                struct Drop { LifeToken* t; ~Drop() { t->active.fetch_sub(1); } }
-                    drop{life.get()};
+                if (!life->alive.load())
+                {
+                    life->active.fetch_sub(1);
+                    return;
+                }
+                struct Drop
+                {
+                    LifeToken* t;
+                    ~Drop() { t->active.fetch_sub(1); }
+                } drop{life.get()};
                 _tick();
             },
             group_);
@@ -189,7 +222,13 @@ public:
     }
 
 private:
-    enum class CsmHealth : uint8_t { INITIAL, ACTIVE, TIMEOUT, DISCONNECTED };
+    enum class CsmHealth : uint8_t
+    {
+        INITIAL,
+        ACTIVE,
+        TIMEOUT,
+        DISCONNECTED
+    };
 
     /// CSM health recovers from TIMEOUT via a same-incarnation heartbeat, so
     /// the entity terminal FSM (§4) is deliberately NOT reused (§9.2).
@@ -207,10 +246,8 @@ private:
         bool isSource;
         bool operator<(const IdentityKey& o) const
         {
-            return std::tie(sourceCsmInstanceId, registrationId,
-                            attemptGeneration, isSource) <
-                   std::tie(o.sourceCsmInstanceId, o.registrationId,
-                            o.attemptGeneration, o.isSource);
+            return std::tie(sourceCsmInstanceId, registrationId, attemptGeneration, isSource) <
+                   std::tie(o.sourceCsmInstanceId, o.registrationId, o.attemptGeneration, o.isSource);
         }
     };
 
@@ -227,10 +264,15 @@ private:
         uint64_t lastSnapshotSeq{0};
         bool snapshotReady{false};
         std::set<std::string> retiredInstanceIds;
-        std::map<IdentityKey, EntryStatusT> entries;   // latest full snapshot
+        std::map<IdentityKey, EntryStatusT> entries;  // latest full snapshot
     };
 
-    enum class PendingKind : uint8_t { CSM_TIMEOUT, DISCONNECTED, PAIR_MISSING };
+    enum class PendingKind : uint8_t
+    {
+        CSM_TIMEOUT,
+        DISCONNECTED,
+        PAIR_MISSING
+    };
 
     struct PendingNotification
     {
@@ -240,14 +282,14 @@ private:
         std::string targetCsmName;
         std::string targetInstanceId;
         std::vector<EntryStatusT> entries;
-        std::string ownerCsm;   // whose health/pairing produced this event
+        std::string ownerCsm;  // whose health/pairing produced this event
         uint32_t attempts{0};
         int64_t nextTryNs{0};
         bool inFlight{false};
         int64_t inFlightDeadlineNs{0};
-        bool acknowledged{false};   // level event queued at receiver, awaiting proof
+        bool acknowledged{false};  // level event queued at receiver, awaiting proof
         int64_t acknowledgedNs{0};
-        std::optional<PairIdentity> pair;   // set for PAIR_MISSING levels
+        std::optional<PairIdentity> pair;  // set for PAIR_MISSING levels
     };
 
     struct NotifyCompletion
@@ -259,8 +301,7 @@ private:
 
     static int64_t _steadyNowNs()
     {
-        return std::chrono::duration_cast<std::chrono::nanoseconds>(
-                   std::chrono::steady_clock::now().time_since_epoch())
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
             .count();
     }
 
@@ -284,8 +325,7 @@ private:
 
     // ── registration (§9.3) ───────────────────────────────────────────────
 
-    void _onRegister(const CsmRegisterSrv::Request& rq,
-                     CsmRegisterSrv::Response& rs)
+    void _onRegister(const CsmRegisterSrv::Request& rq, CsmRegisterSrv::Response& rs)
     {
         if (!_allowed(rq.csm_name))
         {
@@ -293,12 +333,11 @@ private:
             rs.reason = "csm filtered by white/blacklist";
             return;
         }
-        if (rq.csm_name.empty() || rq.csm_instance_id.empty() ||
-            rq.csm_timeout_ns < 0 || rq.csm_disconnect_timeout_ns < 0 ||
+        if (rq.csm_name.empty() || rq.csm_instance_id.empty() || rq.csm_timeout_ns < 0 ||
+            rq.csm_disconnect_timeout_ns < 0 ||
             (rq.csm_timeout_ns > 0 && rq.csm_disconnect_timeout_ns > 0 &&
              rq.csm_disconnect_timeout_ns <= rq.csm_timeout_ns) ||
-            rq.status_interval_ns <= 0 ||
-            rq.registration_grace_ns < 2 * rq.status_interval_ns)
+            rq.status_interval_ns <= 0 || rq.registration_grace_ns < 2 * rq.status_interval_ns)
         {
             rs.response = CsmRegisterSrv::Response::RESPONSE_INVALID_CONFIG;
             rs.reason = "threshold validation failed (§2.5.2)";
@@ -306,26 +345,35 @@ private:
         }
 
         // Build transport endpoints first (outside the lock), commit after.
-        auto sub = node_->create_subscription<ManagerStatusT>(
-            rq.csm_name + "/status", rclcpp::QoS(10),
-            [this, life = life_, csm = rq.csm_name](const ManagerStatusT& m) {
-                if (!life->alive.load()) return;
-                life->active.fetch_add(1);
-                if (!life->alive.load()) { life->active.fetch_sub(1); return; }
-                struct Drop { LifeToken* t; ~Drop() { t->active.fetch_sub(1); } }
-                    drop{life.get()};
-                _onStatus(csm, m);
-            });
+        auto sub =
+            node_->create_subscription<ManagerStatusT>(rq.csm_name + "/status",
+                                                       rclcpp::QoS(10),
+                                                       [this, life = life_, csm = rq.csm_name](const ManagerStatusT& m)
+                                                       {
+                                                           if (!life->alive.load())
+                                                               return;
+                                                           life->active.fetch_add(1);
+                                                           if (!life->alive.load())
+                                                           {
+                                                               life->active.fetch_sub(1);
+                                                               return;
+                                                           }
+                                                           struct Drop
+                                                           {
+                                                               LifeToken* t;
+                                                               ~Drop() { t->active.fetch_sub(1); }
+                                                           } drop{life.get()};
+                                                           _onStatus(csm, m);
+                                                       });
         rclcpp::SubscriptionOptions subOpt;
-        auto cli = node_->create_client<CsmNotifySrv>(
-            rq.csm_name + "/get_notifications", rclcpp::ServicesQoS(), group_);
+        auto cli =
+            node_->create_client<CsmNotifySrv>(rq.csm_name + "/get_notifications", rclcpp::ServicesQoS(), group_);
         (void)subOpt;
 
         {
             std::unique_lock<std::shared_mutex> lk(csmMtx_);
             const auto found = csms_.find(rq.csm_name);
-            if (found != csms_.end() &&
-                found->second.retiredInstanceIds.count(rq.csm_instance_id))
+            if (found != csms_.end() && found->second.retiredInstanceIds.count(rq.csm_instance_id))
             {
                 rs.response = CsmRegisterSrv::Response::RESPONSE_STALE_INSTANCE;
                 rs.reason = "instance already retired";
@@ -333,8 +381,7 @@ private:
             }
             auto& rec = csms_[rq.csm_name];
             const bool sameInstance = rec.instanceId == rq.csm_instance_id;
-            if (sameInstance &&
-                rec.heartbeat.state == CsmHealth::DISCONNECTED)
+            if (sameInstance && rec.heartbeat.state == CsmHealth::DISCONNECTED)
             {
                 // v1.2.1: explicit re-register of a same-instance record that
                 // was declared dead = full rebuild, not an idempotent no-op.
@@ -375,22 +422,18 @@ private:
     }
 
     /// Invalidate pending events aimed at a replaced incarnation (locked).
-    void _dropEventsForInstanceLocked(const std::string& csmName,
-                                      const std::string& instanceId)
+    void _dropEventsForInstanceLocked(const std::string& csmName, const std::string& instanceId)
     {
-        for (auto it = pendingNotifications_.begin();
-             it != pendingNotifications_.end();)
+        for (auto it = pendingNotifications_.begin(); it != pendingNotifications_.end();)
         {
-            if (it->second.targetCsmName == csmName &&
-                it->second.targetInstanceId == instanceId)
+            if (it->second.targetCsmName == csmName && it->second.targetInstanceId == instanceId)
                 it = pendingNotifications_.erase(it);
             else
                 ++it;
         }
     }
 
-    void _onHeartbeat(const CsmHeartbeatSrv::Request& rq,
-                      CsmHeartbeatSrv::Response& rs)
+    void _onHeartbeat(const CsmHeartbeatSrv::Request& rq, CsmHeartbeatSrv::Response& rs)
     {
         std::unique_lock<std::shared_mutex> lk(csmMtx_);
         const auto it = csms_.find(rq.csm_name);
@@ -401,8 +444,7 @@ private:
             return;
         }
         auto& rec = it->second;
-        if (rec.instanceId != rq.csm_instance_id ||
-            rec.retiredInstanceIds.count(rq.csm_instance_id))
+        if (rec.instanceId != rq.csm_instance_id || rec.retiredInstanceIds.count(rq.csm_instance_id))
         {
             rs.response = CsmHeartbeatSrv::Response::RESPONSE_STALE_INSTANCE;
             rs.reason = "old incarnation";
@@ -427,7 +469,7 @@ private:
     {
         struct StateEdge
         {
-            std::string toCsm;          // notification target CSM name
+            std::string toCsm;  // notification target CSM name
             std::string toInstance;
             EntryStatusT entry;
         };
@@ -439,32 +481,25 @@ private:
             if (it == csms_.end())
                 return;
             auto& rec = it->second;
-            if (msg.manager_name != csmName ||
-                msg.csm_instance_id != rec.instanceId ||
+            if (msg.manager_name != csmName || msg.csm_instance_id != rec.instanceId ||
                 rec.retiredInstanceIds.count(msg.csm_instance_id))
-                return;   // old instance: drop whole snapshot
+                return;  // old instance: drop whole snapshot
             if (rec.heartbeat.state == CsmHealth::DISCONNECTED)
-                return;   // v1.2.1: stale data must not revive a dead record;
-                          // only an explicit register performs the rebuild
+                return;  // v1.2.1: stale data must not revive a dead record;
+                    // only an explicit register performs the rebuild
             if (!msg.snapshot_ready)
-                return;   // not a valid baseline yet (§2.5.1)
+                return;  // not a valid baseline yet (§2.5.1)
             // The seq fence spans the whole incarnation (§2.5.1) — it also
             // survives a same-instance full rebuild, so replayed pre-rebuild
             // snapshots can never become the new baseline.
             if (msg.snapshot_seq <= rec.lastSnapshotSeq)
-                return;   // duplicate / out-of-order: drop whole snapshot
+                return;  // duplicate / out-of-order: drop whole snapshot
 
             std::map<IdentityKey, EntryStatusT> fresh;
             for (const auto& e : msg.sources)
-                fresh.emplace(IdentityKey{e.source_csm_instance_id,
-                                          e.registration_id,
-                                          e.attempt_generation, true},
-                              e);
+                fresh.emplace(IdentityKey{e.source_csm_instance_id, e.registration_id, e.attempt_generation, true}, e);
             for (const auto& e : msg.sinks)
-                fresh.emplace(IdentityKey{e.source_csm_instance_id,
-                                          e.registration_id,
-                                          e.attempt_generation, false},
-                              e);
+                fresh.emplace(IdentityKey{e.source_csm_instance_id, e.registration_id, e.attempt_generation, false}, e);
 
             const bool baseline = !rec.snapshotReady;
             // Edge detection old vs new; absent-but-was-REGISTERED entries
@@ -490,11 +525,10 @@ private:
                     }
                 }
                 for (const auto& [key, newE] : fresh)
-                    if (!rec.entries.count(key) &&
-                        newE.state != EntryStatusT::STATE_INITIAL)
+                    if (!rec.entries.count(key) && newE.state != EntryStatusT::STATE_INITIAL)
                         _appendPairEdgesLocked(csmName, newE, edges);
             }
-            rec.entries = std::move(fresh);   // atomic full replacement
+            rec.entries = std::move(fresh);  // atomic full replacement
             rec.lastSnapshotSeq = msg.snapshot_seq;
             rec.snapshotReady = true;
 
@@ -503,8 +537,7 @@ private:
             const int64_t now = _steadyNowNs();
             for (const auto& [key, e] : rec.entries)
             {
-                for (const std::string& n :
-                     {e.source_manager_name, e.target_manager_name})
+                for (const std::string& n : {e.source_manager_name, e.target_manager_name})
                 {
                     if (n.empty())
                         continue;
@@ -523,17 +556,15 @@ private:
 
     /// Adds STATE edge notifications for both members of the entry's pair
     /// (locked; reads other records immutably).
-    template<typename EdgeVec>
-    void _appendPairEdgesLocked(const std::string& ownerCsm,
-                                const EntryStatusT& entry, EdgeVec& edges)
+    template <typename EdgeVec>
+    void _appendPairEdgesLocked(const std::string& ownerCsm, const EntryStatusT& entry, EdgeVec& edges)
     {
         // The owner itself observes the change...
         const auto ownIt = csms_.find(ownerCsm);
         if (ownIt != csms_.end())
             edges.push_back({ownerCsm, ownIt->second.instanceId, entry});
         // ...and so does the paired CSM on the other side (CM3).
-        const std::string peer = entry.is_source ? entry.target_manager_name
-                                                 : entry.source_manager_name;
+        const std::string peer = entry.is_source ? entry.target_manager_name : entry.source_manager_name;
         if (peer.empty() || peer == ownerCsm)
             return;
         const auto peerIt = csms_.find(peer);
@@ -542,9 +573,7 @@ private:
         edges.push_back({peer, peerIt->second.instanceId, entry});
     }
 
-    void _sendStateOneShot(const std::string& csmName,
-                           const std::string& instanceId,
-                           const EntryStatusT& entry)
+    void _sendStateOneShot(const std::string& csmName, const std::string& instanceId, const EntryStatusT& entry)
     {
         rclcpp::Client<CsmNotifySrv>::SharedPtr cli;
         {
@@ -555,14 +584,16 @@ private:
             cli = it->second.notifyCli;
         }
         if (!cli || !cli->service_is_ready())
-            return;   // STATE is best-effort: may be lost (CM9)
+            return;  // STATE is best-effort: may be lost (CM9)
         auto rq = std::make_shared<CsmNotifySrv::Request>();
         rq->kind = CsmNotifySrv::Request::KIND_STATE;
         rq->event_id = _uuid();
         rq->target_csm_instance_id = instanceId;
         rq->entries = {entry};
         cli->async_send_request(rq,
-            [](rclcpp::Client<CsmNotifySrv>::SharedFuture) {});
+                                [](rclcpp::Client<CsmNotifySrv>::SharedFuture)
+                                {
+                                });
     }
 
     // ── tick: polling + reconciliation + notification pump (§9.3) ─────────
@@ -582,21 +613,19 @@ private:
         {
             PendingKind kind;
             int8_t peerHealth;
-            std::string owner;   // the CSM whose health changed
+            std::string owner;  // the CSM whose health changed
         };
         std::vector<HealthEdge> healthEdges;
         {
             std::unique_lock<std::shared_mutex> lk(csmMtx_);
             for (auto& [name, rec] : csms_)
             {
-                if (rec.instanceId.empty() ||
-                    rec.heartbeat.state == CsmHealth::DISCONNECTED)
+                if (rec.instanceId.empty() || rec.heartbeat.state == CsmHealth::DISCONNECTED)
                     continue;
                 const int64_t elapsed = now - rec.heartbeat.lastSeenNs;
                 // Strict >; disconnect judged first, so a single scan may go
                 // straight to DISCONNECTED without a phantom TIMEOUT edge.
-                if (rec.csmDisconnectTimeoutNs > 0 &&
-                    elapsed > rec.csmDisconnectTimeoutNs)
+                if (rec.csmDisconnectTimeoutNs > 0 && elapsed > rec.csmDisconnectTimeoutNs)
                 {
                     rec.heartbeat.state = CsmHealth::DISCONNECTED;
                     healthEdges.push_back({PendingKind::DISCONNECTED, 0, name});
@@ -607,20 +636,17 @@ private:
                     {
                         rec.heartbeat.state = CsmHealth::TIMEOUT;
                         healthEdges.push_back(
-                            {PendingKind::CSM_TIMEOUT,
-                             CsmNotifySrv::Request::PEER_HEALTH_TIMEOUT, name});
+                            {PendingKind::CSM_TIMEOUT, CsmNotifySrv::Request::PEER_HEALTH_TIMEOUT, name});
                     }
                 }
                 else if (rec.heartbeat.state == CsmHealth::TIMEOUT)
                 {
                     rec.heartbeat.state = CsmHealth::ACTIVE;
-                    healthEdges.push_back(
-                        {PendingKind::CSM_TIMEOUT,
-                         CsmNotifySrv::Request::PEER_HEALTH_ACTIVE, name});
+                    healthEdges.push_back({PendingKind::CSM_TIMEOUT, CsmNotifySrv::Request::PEER_HEALTH_ACTIVE, name});
                 }
                 else if (rec.heartbeat.state == CsmHealth::INITIAL)
                 {
-                    rec.heartbeat.state = CsmHealth::ACTIVE;   // silent edge
+                    rec.heartbeat.state = CsmHealth::ACTIVE;  // silent edge
                 }
             }
             for (const auto& e : healthEdges)
@@ -631,8 +657,7 @@ private:
     /// For every entry of the affected CSM, queue a reliable event to the
     /// paired peer (locked). Latest level replaces an older pending event
     /// for the same target+kind (§9.3).
-    void _queueHealthEventsLocked(const std::string& owner, PendingKind kind,
-                                  int8_t peerHealth, int64_t now)
+    void _queueHealthEventsLocked(const std::string& owner, PendingKind kind, int8_t peerHealth, int64_t now)
     {
         const auto ownIt = csms_.find(owner);
         if (ownIt == csms_.end())
@@ -641,8 +666,7 @@ private:
         std::map<std::string, std::vector<EntryStatusT>> perPeer;
         for (const auto& [key, e] : ownIt->second.entries)
         {
-            const std::string peer = e.is_source ? e.target_manager_name
-                                                 : e.source_manager_name;
+            const std::string peer = e.is_source ? e.target_manager_name : e.source_manager_name;
             if (peer.empty() || peer == owner || !csms_.count(peer))
                 continue;
             perPeer[peer].push_back(e);
@@ -655,12 +679,9 @@ private:
             // Latest level replaces an older pending of the same class FROM
             // THE SAME owner only — another CSM's undelivered reliable event
             // toward the same peer must survive (§9.3).
-            for (auto it = pendingNotifications_.begin();
-                 it != pendingNotifications_.end();)
+            for (auto it = pendingNotifications_.begin(); it != pendingNotifications_.end();)
             {
-                if (it->second.targetCsmName == peer &&
-                    it->second.kind == kind &&
-                    it->second.ownerCsm == owner &&
+                if (it->second.targetCsmName == peer && it->second.kind == kind && it->second.ownerCsm == owner &&
                     !it->second.pair.has_value())
                     it = pendingNotifications_.erase(it);
                 else
@@ -709,32 +730,27 @@ private:
             std::map<PairIdentity, std::pair<std::string, EntryStatusT>> single;
             for (const auto& [name, rec] : csms_)
             {
-                if (rec.instanceId.empty() || !rec.snapshotReady ||
-                    rec.heartbeat.state == CsmHealth::DISCONNECTED)
+                if (rec.instanceId.empty() || !rec.snapshotReady || rec.heartbeat.state == CsmHealth::DISCONNECTED)
                     continue;
                 for (const auto& [key, e] : rec.entries)
                 {
                     PairIdentity pid;
-                    pid.registration = {e.source_csm_instance_id,
-                                        e.registration_id, e.attempt_generation};
+                    pid.registration = {e.source_csm_instance_id, e.registration_id, e.attempt_generation};
                     pid.controllerName = e.controller_name;
                     pid.sourceCsmName = e.source_manager_name;
                     pid.targetCsmName = e.target_manager_name;
                     // Target incarnation from the target record when known.
                     const auto tIt = csms_.find(e.target_manager_name);
-                    pid.targetCsmInstanceId =
-                        tIt != csms_.end() ? tIt->second.instanceId : "";
+                    pid.targetCsmInstanceId = tIt != csms_.end() ? tIt->second.instanceId : "";
 
                     if (e.registration_phase == EntryStatusT::PHASE_PENDING)
                     {
-                        pendingNow.insert(pid);   // suspends the grace clock
+                        pendingNow.insert(pid);  // suspends the grace clock
                         continue;
                     }
-                    const bool live =
-                        e.registration_phase == EntryStatusT::PHASE_REGISTERED &&
-                        e.endpoint_present;
+                    const bool live = e.registration_phase == EntryStatusT::PHASE_REGISTERED && e.endpoint_present;
                     if (!live)
-                        continue;   // RETRY_WAIT is an intent, not an endpoint
+                        continue;  // RETRY_WAIT is an intent, not an endpoint
                     const auto sIt = single.find(pid);
                     if (sIt == single.end())
                         single.emplace(pid, std::make_pair(name, e));
@@ -747,22 +763,17 @@ private:
             }
 
             // Paired or pending: reset clocks and clear matching levels.
-            for (auto it = unpairedSinceNs_.begin();
-                 it != unpairedSinceNs_.end();)
+            for (auto it = unpairedSinceNs_.begin(); it != unpairedSinceNs_.end();)
             {
-                if (pairedNow.count(it->first) || pendingNow.count(it->first) ||
-                    !single.count(it->first))
+                if (pairedNow.count(it->first) || pendingNow.count(it->first) || !single.count(it->first))
                     it = unpairedSinceNs_.erase(it);
                 else
                     ++it;
             }
-            for (auto it = pendingNotifications_.begin();
-                 it != pendingNotifications_.end();)
+            for (auto it = pendingNotifications_.begin(); it != pendingNotifications_.end();)
             {
-                if (it->second.pair &&
-                    (pairedNow.count(*it->second.pair) ||
-                     !single.count(*it->second.pair)))
-                    it = pendingNotifications_.erase(it);   // condition gone
+                if (it->second.pair && (pairedNow.count(*it->second.pair) || !single.count(*it->second.pair)))
+                    it = pendingNotifications_.erase(it);  // condition gone
                 else
                     ++it;
             }
@@ -775,33 +786,24 @@ private:
                     continue;
                 const std::string& owner = ownerEntry.first;
                 const EntryStatusT& e = ownerEntry.second;
-                const std::string other = e.is_source ? pid.targetCsmName
-                                                      : pid.sourceCsmName;
+                const std::string other = e.is_source ? pid.targetCsmName : pid.sourceCsmName;
                 const auto oIt = csms_.find(other);
-                const bool otherDead =
-                    oIt != csms_.end() &&
-                    oIt->second.heartbeat.state == CsmHealth::DISCONNECTED;
+                const bool otherDead = oIt != csms_.end() && oIt->second.heartbeat.state == CsmHealth::DISCONNECTED;
                 const bool otherReady =
-                    oIt != csms_.end() && !oIt->second.instanceId.empty() &&
-                    oIt->second.snapshotReady && !otherDead;
+                    oIt != csms_.end() && !oIt->second.instanceId.empty() && oIt->second.snapshotReady && !otherDead;
                 // A DISCONNECTED peer that never re-registers must not hold
                 // the gate closed forever — the grace clock runs.
-                if (!otherReady && !otherDead && oIt != csms_.end() &&
-                    !absenceExpired.count(other))
-                    continue;   // ready gate holds while the peer is coming up
+                if (!otherReady && !otherDead && oIt != csms_.end() && !absenceExpired.count(other))
+                    continue;  // ready gate holds while the peer is coming up
                 if (oIt == csms_.end() && !absenceExpired.count(other))
-                    continue;   // absence clock still running
+                    continue;  // absence clock still running
 
                 int64_t graceNs = opt_.pairGraceMs * 1'000'000;
                 const auto rIt = csms_.find(owner);
                 if (rIt != csms_.end())
-                    graceNs = std::max(
-                        {graceNs, 2 * rIt->second.statusIntervalNs,
-                         rIt->second.registrationGraceNs});
+                    graceNs = std::max({graceNs, 2 * rIt->second.statusIntervalNs, rIt->second.registrationGraceNs});
                 if (oIt != csms_.end())
-                    graceNs = std::max(
-                        {graceNs, 2 * oIt->second.statusIntervalNs,
-                         oIt->second.registrationGraceNs});
+                    graceNs = std::max({graceNs, 2 * oIt->second.statusIntervalNs, oIt->second.registrationGraceNs});
 
                 const auto uIt = unpairedSinceNs_.emplace(pid, now).first;
                 if (now - uIt->second <= graceNs)
@@ -817,10 +819,7 @@ private:
                     }
                 if (exists)
                     continue;
-                newLevels.push_back({pid, owner,
-                                     rIt != csms_.end() ? rIt->second.instanceId
-                                                        : "",
-                                     e});
+                newLevels.push_back({pid, owner, rIt != csms_.end() ? rIt->second.instanceId : "", e});
             }
 
             for (auto& lv : newLevels)
@@ -860,12 +859,11 @@ private:
             {
                 if (pn.inFlight && now > pn.inFlightDeadlineNs)
                 {
-                    pn.inFlight = false;   // lost response: release the slot
+                    pn.inFlight = false;  // lost response: release the slot
                     if (inFlight > 0)
                         --inFlight;
                 }
-                if (inFlight + launches.size() >=
-                    opt_.notificationRetry.maxInFlight)
+                if (inFlight + launches.size() >= opt_.notificationRetry.maxInFlight)
                     break;
                 if (pn.inFlight || now < pn.nextTryNs)
                     continue;
@@ -873,31 +871,27 @@ private:
                 {
                     // delivered-awaiting-observation (PAIR_MISSING): resend
                     // only if the condition persists past the apply grace.
-                    if (now - pn.acknowledgedNs <=
-                        opt_.pairGraceMs * 1'000'000)
+                    if (now - pn.acknowledgedNs <= opt_.pairGraceMs * 1'000'000)
                         continue;
                     pn.acknowledged = false;
                 }
                 const auto rIt = csms_.find(pn.targetCsmName);
-                if (rIt == csms_.end() ||
-                    rIt->second.instanceId != pn.targetInstanceId)
-                    continue;   // fixed target incarnation: never re-aimed
+                if (rIt == csms_.end() || rIt->second.instanceId != pn.targetInstanceId)
+                    continue;  // fixed target incarnation: never re-aimed
                 pn.inFlight = true;
-                pn.inFlightDeadlineNs =
-                    now + opt_.notificationRetry.maxDelayMs * 1'000'000;
+                pn.inFlightDeadlineNs = now + opt_.notificationRetry.maxDelayMs * 1'000'000;
                 ++pn.attempts;
-                launches.push_back({id, pn.kind, pn.peerHealth,
-                                    pn.targetCsmName, pn.targetInstanceId,
-                                    pn.entries});
+                launches.push_back({id, pn.kind, pn.peerHealth, pn.targetCsmName, pn.targetInstanceId, pn.entries});
             }
         }
         for (auto& l : launches)
-            _launchNotification(l.eventId, l.kind, l.peerHealth, l.target,
-                                l.targetInstance, l.entries);
+            _launchNotification(l.eventId, l.kind, l.peerHealth, l.target, l.targetInstance, l.entries);
     }
 
-    void _launchNotification(const std::string& eventId, PendingKind kind,
-                             int8_t peerHealth, const std::string& target,
+    void _launchNotification(const std::string& eventId,
+                             PendingKind kind,
+                             int8_t peerHealth,
+                             const std::string& target,
                              const std::string& targetInstance,
                              const std::vector<EntryStatusT>& entries)
     {
@@ -917,31 +911,39 @@ private:
         auto rq = std::make_shared<CsmNotifySrv::Request>();
         switch (kind)
         {
-            case PendingKind::CSM_TIMEOUT:
-                rq->kind = CsmNotifySrv::Request::KIND_CSM_TIMEOUT;
-                break;
-            case PendingKind::DISCONNECTED:
-                rq->kind = CsmNotifySrv::Request::KIND_DISCONNECTED;
-                break;
-            case PendingKind::PAIR_MISSING:
-                rq->kind = CsmNotifySrv::Request::KIND_PAIR_MISSING;
-                break;
+        case PendingKind::CSM_TIMEOUT:
+            rq->kind = CsmNotifySrv::Request::KIND_CSM_TIMEOUT;
+            break;
+        case PendingKind::DISCONNECTED:
+            rq->kind = CsmNotifySrv::Request::KIND_DISCONNECTED;
+            break;
+        case PendingKind::PAIR_MISSING:
+            rq->kind = CsmNotifySrv::Request::KIND_PAIR_MISSING;
+            break;
         }
         rq->peer_csm_health = peerHealth;
         rq->event_id = eventId;
         rq->target_csm_instance_id = targetInstance;
         rq->entries = entries;
         cli->async_send_request(rq,
-            [this, life = life_, eventId](
-                rclcpp::Client<CsmNotifySrv>::SharedFuture f) {
-                if (!life->alive.load()) return;
-                life->active.fetch_add(1);
-                if (!life->alive.load()) { life->active.fetch_sub(1); return; }
-                struct Drop { LifeToken* t; ~Drop() { t->active.fetch_sub(1); } }
-                    drop{life.get()};
-                std::lock_guard<std::mutex> lk(completionMtx_);
-                completions_.push_back({eventId, f.get()->response, true});
-            });
+                                [this, life = life_, eventId](rclcpp::Client<CsmNotifySrv>::SharedFuture f)
+                                {
+                                    if (!life->alive.load())
+                                        return;
+                                    life->active.fetch_add(1);
+                                    if (!life->alive.load())
+                                    {
+                                        life->active.fetch_sub(1);
+                                        return;
+                                    }
+                                    struct Drop
+                                    {
+                                        LifeToken* t;
+                                        ~Drop() { t->active.fetch_sub(1); }
+                                    } drop{life.get()};
+                                    std::lock_guard<std::mutex> lk(completionMtx_);
+                                    completions_.push_back({eventId, f.get()->response, true});
+                                });
     }
 
     void _drainCompletions(int64_t now)
@@ -962,11 +964,9 @@ private:
                 continue;
             auto& pn = it->second;
             pn.inFlight = false;
-            const bool settled =
-                c.transportOk &&
-                (c.response == CsmNotifySrv::Response::RESPONSE_APPLIED ||
-                 c.response == CsmNotifySrv::Response::RESPONSE_ALREADY_APPLIED ||
-                 c.response == CsmNotifySrv::Response::RESPONSE_STALE);
+            const bool settled = c.transportOk && (c.response == CsmNotifySrv::Response::RESPONSE_APPLIED ||
+                                                   c.response == CsmNotifySrv::Response::RESPONSE_ALREADY_APPLIED ||
+                                                   c.response == CsmNotifySrv::Response::RESPONSE_STALE);
             if (settled)
             {
                 if (pn.kind == PendingKind::PAIR_MISSING)
@@ -985,17 +985,13 @@ private:
             // Transport loss / REJECTED: exponential backoff + jitter,
             // no attempt cap (correctness-critical, §9.2).
             int64_t delayMs = opt_.notificationRetry.initialDelayMs;
-            for (uint32_t i = 1;
-                 i < pn.attempts && delayMs < opt_.notificationRetry.maxDelayMs;
-                 ++i)
+            for (uint32_t i = 1; i < pn.attempts && delayMs < opt_.notificationRetry.maxDelayMs; ++i)
                 delayMs *= 2;
             delayMs = std::min(delayMs, opt_.notificationRetry.maxDelayMs);
             static thread_local std::mt19937 jrng{std::random_device{}()};
-            std::uniform_real_distribution<double> dist(
-                1.0 - opt_.notificationRetry.jitterRatio,
-                1.0 + opt_.notificationRetry.jitterRatio);
-            pn.nextTryNs =
-                now + static_cast<int64_t>(delayMs * dist(jrng)) * 1'000'000;
+            std::uniform_real_distribution<double> dist(1.0 - opt_.notificationRetry.jitterRatio,
+                                                        1.0 + opt_.notificationRetry.jitterRatio);
+            pn.nextTryNs = now + static_cast<int64_t>(delayMs * dist(jrng)) * 1'000'000;
         }
     }
 
@@ -1011,11 +1007,11 @@ private:
     const MasterOptions opt_;
     std::shared_ptr<LifeToken> life_{std::make_shared<LifeToken>()};
 
-    mutable std::shared_mutex csmMtx_;   // guards the three maps + records
+    mutable std::shared_mutex csmMtx_;  // guards the three maps + records
     std::map<std::string, CsmRecord> csms_;
     std::map<PairIdentity, int64_t> unpairedSinceNs_;
     std::map<std::string, PendingNotification> pendingNotifications_;
-    std::map<std::string, int64_t> absenceSince_;   // per-name absence clock
+    std::map<std::string, int64_t> absenceSince_;  // per-name absence clock
 
     std::mutex completionMtx_;
     std::deque<NotifyCompletion> completions_;
@@ -1030,7 +1026,7 @@ private:
     rclcpp::TimerBase::SharedPtr tick_;
 };
 
-} // namespace r1
-} // namespace rv2_interfaces
+}  // namespace r1
+}  // namespace rv2_interfaces
 
-#endif // RV2_CONTROL_SIGNAL_TRANSPORT_R1_CSM_MASTER_H
+#endif  // RV2_CONTROL_SIGNAL_TRANSPORT_R1_CSM_MASTER_H

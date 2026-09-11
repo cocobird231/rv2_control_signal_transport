@@ -27,10 +27,10 @@ using rv2_interfaces::r1::ControlSignalState;
 using rv2_interfaces::r1::LivenessDecision;
 using rv2_interfaces::r1::LivenessState;
 
-constexpr int64_t kMs = 1'000'000;          // ns per millisecond
-constexpr int64_t kTimeout = 100 * kMs;     // variant A thresholds
+constexpr int64_t kMs = 1'000'000;  // ns per millisecond
+constexpr int64_t kTimeout = 100 * kMs;  // variant A thresholds
 constexpr int64_t kDisconnect = 1000 * kMs;
-constexpr int64_t kT0 = 5'000 * kMs;        // arbitrary fake-clock origin
+constexpr int64_t kT0 = 5'000 * kMs;  // arbitrary fake-clock origin
 
 // L1: fresh instance — state() INITIAL, calc INITIAL, generation 0.
 TEST(LivenessStateTest, L1_InitialState)
@@ -60,8 +60,7 @@ TEST(LivenessStateTest, L3_TimeoutDecision)
     LivenessState ls(kT0);
     ASSERT_TRUE(ls.recordActivity(kT0));
 
-    const LivenessDecision d =
-        ls.calcState(kT0 + kTimeout + 1, kTimeout, kDisconnect);
+    const LivenessDecision d = ls.calcState(kT0 + kTimeout + 1, kTimeout, kDisconnect);
     EXPECT_EQ(d.state, ControlSignalState::TIMEOUT);
 }
 
@@ -71,13 +70,11 @@ TEST(LivenessStateTest, L4_TimeoutRecovers)
 {
     LivenessState ls(kT0);
     ASSERT_TRUE(ls.recordActivity(kT0));
-    ASSERT_EQ(ls.calcState(kT0 + kTimeout + 1, kTimeout, kDisconnect).state,
-              ControlSignalState::TIMEOUT);
+    ASSERT_EQ(ls.calcState(kT0 + kTimeout + 1, kTimeout, kDisconnect).state, ControlSignalState::TIMEOUT);
 
     const int64_t resume = kT0 + kTimeout + 2;
     ASSERT_TRUE(ls.recordActivity(resume));
-    EXPECT_EQ(ls.calcState(resume + kMs, kTimeout, kDisconnect).state,
-              ControlSignalState::ACTIVE);
+    EXPECT_EQ(ls.calcState(resume + kMs, kTimeout, kDisconnect).state, ControlSignalState::ACTIVE);
 }
 
 // L5: elapsed > disconnect — DISCONNECTED, including the single-jump case
@@ -88,10 +85,8 @@ TEST(LivenessStateTest, L5_DisconnectDecisionSingleJump)
     ASSERT_TRUE(ls.recordActivity(kT0));
 
     // Previous calc saw ACTIVE; the next one jumps beyond both thresholds.
-    ASSERT_EQ(ls.calcState(kT0 + kMs, kTimeout, kDisconnect).state,
-              ControlSignalState::ACTIVE);
-    const LivenessDecision d =
-        ls.calcState(kT0 + kDisconnect + 1, kTimeout, kDisconnect);
+    ASSERT_EQ(ls.calcState(kT0 + kMs, kTimeout, kDisconnect).state, ControlSignalState::ACTIVE);
+    const LivenessDecision d = ls.calcState(kT0 + kDisconnect + 1, kTimeout, kDisconnect);
     EXPECT_EQ(d.state, ControlSignalState::DISCONNECTED);
 }
 
@@ -99,8 +94,7 @@ TEST(LivenessStateTest, L5_DisconnectDecisionSingleJump)
 TEST(LivenessStateTest, L6_NeverActiveNoTimeout)
 {
     LivenessState ls(kT0);
-    const LivenessDecision d =
-        ls.calcState(kT0 + kTimeout + 1, kTimeout, kDisconnect);
+    const LivenessDecision d = ls.calcState(kT0 + kTimeout + 1, kTimeout, kDisconnect);
     EXPECT_EQ(d.state, ControlSignalState::INITIAL);
     EXPECT_EQ(d.observedActivityGeneration, 0u);
 }
@@ -109,8 +103,7 @@ TEST(LivenessStateTest, L6_NeverActiveNoTimeout)
 TEST(LivenessStateTest, L7_NeverActiveDisconnect)
 {
     LivenessState ls(kT0);
-    const LivenessDecision d =
-        ls.calcState(kT0 + kDisconnect + 1, kTimeout, kDisconnect);
+    const LivenessDecision d = ls.calcState(kT0 + kDisconnect + 1, kTimeout, kDisconnect);
     EXPECT_EQ(d.state, ControlSignalState::DISCONNECTED);
 }
 
@@ -120,15 +113,13 @@ TEST(LivenessStateTest, L8_BoundaryIsStrict)
     LivenessState ls(kT0);
     ASSERT_TRUE(ls.recordActivity(kT0));
 
-    EXPECT_EQ(ls.calcState(kT0 + kTimeout, kTimeout, kDisconnect).state,
-              ControlSignalState::ACTIVE);
+    EXPECT_EQ(ls.calcState(kT0 + kTimeout, kTimeout, kDisconnect).state, ControlSignalState::ACTIVE);
     EXPECT_EQ(ls.calcState(kT0 + kDisconnect, kTimeout, kDisconnect).state,
-              ControlSignalState::TIMEOUT);   // > timeout, == disconnect
+              ControlSignalState::TIMEOUT);  // > timeout, == disconnect
 
     // Never-active boundary: elapsed == disconnect stays INITIAL.
     LivenessState fresh(kT0);
-    EXPECT_EQ(fresh.calcState(kT0 + kDisconnect, kTimeout, kDisconnect).state,
-              ControlSignalState::INITIAL);
+    EXPECT_EQ(fresh.calcState(kT0 + kDisconnect, kTimeout, kDisconnect).state, ControlSignalState::INITIAL);
 }
 
 // L9: applyState returns the previous state and state() reads the new one.
@@ -136,11 +127,9 @@ TEST(LivenessStateTest, L8_BoundaryIsStrict)
 TEST(LivenessStateTest, L9_ApplyStateReturnsOld)
 {
     LivenessState ls(kT0);
-    EXPECT_EQ(ls.applyState(ControlSignalState::ACTIVE),
-              ControlSignalState::INITIAL);
+    EXPECT_EQ(ls.applyState(ControlSignalState::ACTIVE), ControlSignalState::INITIAL);
     EXPECT_EQ(ls.state(), ControlSignalState::ACTIVE);
-    EXPECT_EQ(ls.applyState(ControlSignalState::TIMEOUT),
-              ControlSignalState::ACTIVE);
+    EXPECT_EQ(ls.applyState(ControlSignalState::TIMEOUT), ControlSignalState::ACTIVE);
     EXPECT_EQ(ls.state(), ControlSignalState::TIMEOUT);
 }
 
@@ -173,12 +162,10 @@ TEST(LivenessStateTest, L11_VariantB_NoDisconnect)
 
     LivenessState active(kT0);
     ASSERT_TRUE(active.recordActivity(kT0));
-    EXPECT_EQ(active.calcState(huge, kTimeout, 0).state,
-              ControlSignalState::TIMEOUT);
+    EXPECT_EQ(active.calcState(huge, kTimeout, 0).state, ControlSignalState::TIMEOUT);
 
     LivenessState never(kT0);
-    EXPECT_EQ(never.calcState(huge, kTimeout, 0).state,
-              ControlSignalState::INITIAL);
+    EXPECT_EQ(never.calcState(huge, kTimeout, 0).state, ControlSignalState::INITIAL);
 }
 
 // L12: variant C (timeout = 0) — TIMEOUT unreachable; crossing disconnect
@@ -189,9 +176,8 @@ TEST(LivenessStateTest, L12_VariantC_NoTimeout)
     ASSERT_TRUE(ls.recordActivity(kT0));
 
     EXPECT_EQ(ls.calcState(kT0 + kDisconnect, 0, kDisconnect).state,
-              ControlSignalState::ACTIVE);      // huge elapsed, still ACTIVE
-    EXPECT_EQ(ls.calcState(kT0 + kDisconnect + 1, 0, kDisconnect).state,
-              ControlSignalState::DISCONNECTED);
+              ControlSignalState::ACTIVE);  // huge elapsed, still ACTIVE
+    EXPECT_EQ(ls.calcState(kT0 + kDisconnect + 1, 0, kDisconnect).state, ControlSignalState::DISCONNECTED);
 }
 
 // L13: variant D (both 0) — calc never leaves the current phase regardless of
@@ -209,8 +195,7 @@ TEST(LivenessStateTest, L13_VariantD_BothDisabled)
 
     // Forced exit stays available.
     active.sealActivity();
-    EXPECT_EQ(active.applyState(ControlSignalState::DISCONNECTED),
-              ControlSignalState::INITIAL);
+    EXPECT_EQ(active.applyState(ControlSignalState::DISCONNECTED), ControlSignalState::INITIAL);
     EXPECT_EQ(active.state(), ControlSignalState::DISCONNECTED);
 }
 
@@ -236,35 +221,38 @@ TEST(LivenessStateTest, L14_MultiWriterOutOfOrder)
     std::vector<std::thread> writers;
     for (int t = 0; t < kThreads; ++t)
     {
-        writers.emplace_back([&, t]() {
-            for (int i = 0; i < kPerThread; ++i)
+        writers.emplace_back(
+            [&, t]()
             {
-                const int64_t now = stamps[t * kPerThread + i];
-                if (ls.recordActivity(now))
-                    accepted.fetch_add(1, std::memory_order_relaxed);
-                int64_t m = maxSeen.load(std::memory_order_relaxed);
-                while (now > m &&
-                       !maxSeen.compare_exchange_weak(m, now,
-                                                      std::memory_order_relaxed))
-                {}
-            }
-        });
+                for (int i = 0; i < kPerThread; ++i)
+                {
+                    const int64_t now = stamps[t * kPerThread + i];
+                    if (ls.recordActivity(now))
+                        accepted.fetch_add(1, std::memory_order_relaxed);
+                    int64_t m = maxSeen.load(std::memory_order_relaxed);
+                    while (now > m && !maxSeen.compare_exchange_weak(m, now, std::memory_order_relaxed))
+                    {
+                    }
+                }
+            });
     }
 
     // Single tick-role thread (calc/apply, §4.5): non-terminal states may be
     // applied concurrently with the writers; the timestamp never regresses.
     std::atomic<bool> stop{false};
     int64_t lastTs = 0;
-    std::thread ticker([&]() {
-        while (!stop.load(std::memory_order_relaxed))
+    std::thread ticker(
+        [&]()
         {
-            const ActivitySnapshot s = ls.activitySnapshot();
-            EXPECT_GE(s.lastActivityNs, lastTs);
-            lastTs = s.lastActivityNs;
-            const auto d = ls.calcState(kT0 + 1, kTimeout, kDisconnect);
-            ls.applyState(d.state);
-        }
-    });
+            while (!stop.load(std::memory_order_relaxed))
+            {
+                const ActivitySnapshot s = ls.activitySnapshot();
+                EXPECT_GE(s.lastActivityNs, lastTs);
+                lastTs = s.lastActivityNs;
+                const auto d = ls.calcState(kT0 + 1, kTimeout, kDisconnect);
+                ls.applyState(d.state);
+            }
+        });
 
     for (auto& w : writers)
         w.join();
@@ -322,7 +310,7 @@ TEST(LivenessStateTest, L16_SealLosesToActivity)
     const LivenessDecision d = ls.calcState(tick1, kTimeout, kDisconnect);
     ASSERT_EQ(d.state, ControlSignalState::DISCONNECTED);
 
-    ASSERT_TRUE(ls.recordActivity(tick1));                       // activity wins
+    ASSERT_TRUE(ls.recordActivity(tick1));  // activity wins
     EXPECT_FALSE(ls.trySealActivity(d.observedActivityGeneration));
 
     // Seal failure changed nothing: not sealed, activity still accepted.
@@ -332,9 +320,8 @@ TEST(LivenessStateTest, L16_SealLosesToActivity)
     EXPECT_TRUE(ls.recordActivity(tick1 + 1));
 
     // This round must not apply DISCONNECTED; next tick computes ACTIVE.
-    EXPECT_EQ(ls.calcState(tick1 + kMs, kTimeout, kDisconnect).state,
-              ControlSignalState::ACTIVE);
-    EXPECT_EQ(ls.state(), ControlSignalState::INITIAL);          // untouched
+    EXPECT_EQ(ls.calcState(tick1 + kMs, kTimeout, kDisconnect).state, ControlSignalState::ACTIVE);
+    EXPECT_EQ(ls.state(), ControlSignalState::INITIAL);  // untouched
 }
 
 // L17: once the seal wins, hot-path activity is rejected and the terminal
@@ -366,10 +353,9 @@ TEST(LivenessStateTest, L17_SealWinsRejectsActivity)
 
     // Terminal apply: old != new exactly once → caller fires one callback,
     // then shutdown / erase is safe.
+    EXPECT_EQ(ls.applyState(ControlSignalState::DISCONNECTED), ControlSignalState::INITIAL);
     EXPECT_EQ(ls.applyState(ControlSignalState::DISCONNECTED),
-              ControlSignalState::INITIAL);
-    EXPECT_EQ(ls.applyState(ControlSignalState::DISCONNECTED),
-              ControlSignalState::DISCONNECTED);   // no further old != new edge
+              ControlSignalState::DISCONNECTED);  // no further old != new edge
 }
 
 // L18: first tick after recordActivity is already past timeout — INITIAL may
@@ -381,18 +367,17 @@ TEST(LivenessStateTest, L18_LateFirstTick)
     ASSERT_TRUE(recorded.recordActivity(kT0));
     ASSERT_EQ(recorded.state(), ControlSignalState::INITIAL);
 
-    const int64_t lateTick = kT0 + kTimeout + 1;    // < disconnect
+    const int64_t lateTick = kT0 + kTimeout + 1;  // < disconnect
     const LivenessDecision d = recorded.calcState(lateTick, kTimeout, kDisconnect);
     EXPECT_EQ(d.state, ControlSignalState::TIMEOUT);
     EXPECT_EQ(recorded.applyState(d.state), ControlSignalState::INITIAL);
     EXPECT_EQ(recorded.state(), ControlSignalState::TIMEOUT);
 
     LivenessState never(kT0);
-    EXPECT_EQ(never.calcState(lateTick, kTimeout, kDisconnect).state,
-              ControlSignalState::INITIAL);
+    EXPECT_EQ(never.calcState(lateTick, kTimeout, kDisconnect).state, ControlSignalState::INITIAL);
 }
 
-} // namespace
+}  // namespace
 
 int main(int argc, char** argv)
 {

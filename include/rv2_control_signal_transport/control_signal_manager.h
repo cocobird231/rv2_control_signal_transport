@@ -31,10 +31,8 @@
 #include <typeindex>
 #include <typeinfo>
 
-
 namespace rv2_interfaces
 {
-
 
 /**
  * @brief ControlSignalManager manages a set of Sources and Sinks for a node.
@@ -59,34 +57,35 @@ public:
      * @param name                    Unique manager name; used as prefix for hosted service names.
      * @param statusTimerIntervalMs   Period of the low-frequency status/disconnect timer in ms (default 1000).
      */
-    ControlSignalManager(rclcpp::Node* node, const std::string& name,
-                         int64_t statusTimerIntervalMs = 1000)
-        : node_(node)
-        , name_(name)
+    ControlSignalManager(rclcpp::Node* node, const std::string& name, int64_t statusTimerIntervalMs = 1000) :
+        node_(node),
+        name_(name)
     {
         using namespace std::placeholders;
 
-        regSrv_ = node_->create_service<srv::ControlSignalReg>(
-            name_ + "/control_signal_reg",
-            std::bind(&ControlSignalManager::_onReg, this, _1, _2));
+        regSrv_ = node_->create_service<srv::ControlSignalReg>(name_ + "/control_signal_reg",
+                                                               std::bind(&ControlSignalManager::_onReg, this, _1, _2));
 
         infoReqSrv_ = node_->create_service<srv::ControlSignalInfoReq>(
-            name_ + "/control_signal_info_req",
-            std::bind(&ControlSignalManager::_onInfoReq, this, _1, _2));
+            name_ + "/control_signal_info_req", std::bind(&ControlSignalManager::_onInfoReq, this, _1, _2));
 
         // Low-frequency status timer: checks Source/Sink states and removes entries
         // that have been continuously in TIMEOUT for longer than their disconnect_timeout_ns.
-        statusTimer_ = node_->create_wall_timer(
-            std::chrono::milliseconds(statusTimerIntervalMs),
-            [this]() { _statusTimerCb(); });
+        statusTimer_ = node_->create_wall_timer(std::chrono::milliseconds(statusTimerIntervalMs),
+                                                [this]()
+                                                {
+                                                    _statusTimerCb();
+                                                });
 
         RCLCPP_INFO(node_->get_logger(),
-            "[CSM:%s] Started. Services: '%s/control_signal_reg', '%s/control_signal_info_req'",
-            name_.c_str(), name_.c_str(), name_.c_str());
+                    "[CSM:%s] Started. Services: '%s/control_signal_reg', '%s/control_signal_info_req'",
+                    name_.c_str(),
+                    name_.c_str(),
+                    name_.c_str());
     }
 
     // Non-copyable, non-movable (owns ROS 2 service handles).
-    ControlSignalManager(const ControlSignalManager&)            = delete;
+    ControlSignalManager(const ControlSignalManager&) = delete;
     ControlSignalManager& operator=(const ControlSignalManager&) = delete;
 
     // ── Public API ─────────────────────────────────────────────────────────────
@@ -119,8 +118,10 @@ public:
             if (!v.valid)
             {
                 RCLCPP_ERROR(node_->get_logger(),
-                    "[CSM:%s] registerSource: invalid ControlSignalInfo for channel '%s': %s",
-                    name_.c_str(), info.channel_name.c_str(), v.error.c_str());
+                             "[CSM:%s] registerSource: invalid ControlSignalInfo for channel '%s': %s",
+                             name_.c_str(),
+                             info.channel_name.c_str(),
+                             v.error.c_str());
                 return false;
             }
         }
@@ -131,8 +132,9 @@ public:
             if (sources_.count(info.channel_name))
             {
                 RCLCPP_WARN(node_->get_logger(),
-                    "[CSM:%s] registerSource: source already registered for channel '%s'",
-                    name_.c_str(), info.channel_name.c_str());
+                            "[CSM:%s] registerSource: source already registered for channel '%s'",
+                            name_.c_str(),
+                            info.channel_name.c_str());
                 return false;
             }
         }
@@ -144,22 +146,26 @@ public:
         if (!client->wait_for_service(std::chrono::milliseconds(timeoutMs)))
         {
             RCLCPP_ERROR(node_->get_logger(),
-                "[CSM:%s] registerSource: service '%s' not available within %ldms",
-                name_.c_str(), svcName.c_str(), static_cast<long>(timeoutMs));
+                         "[CSM:%s] registerSource: service '%s' not available within %ldms",
+                         name_.c_str(),
+                         svcName.c_str(),
+                         static_cast<long>(timeoutMs));
             return false;
         }
 
         // Send registration request.
         auto req = std::make_shared<srv::ControlSignalReg::Request>();
-        req->source_csm_name           = name_;
+        req->source_csm_name = name_;
         req->control_signal_source_info = info;
 
         auto future = client->async_send_request(req);
         if (future.wait_for(std::chrono::milliseconds(timeoutMs)) != std::future_status::ready)
         {
             RCLCPP_ERROR(node_->get_logger(),
-                "[CSM:%s] registerSource: no response from '%s' within %ldms",
-                name_.c_str(), svcName.c_str(), static_cast<long>(timeoutMs));
+                         "[CSM:%s] registerSource: no response from '%s' within %ldms",
+                         name_.c_str(),
+                         svcName.c_str(),
+                         static_cast<long>(timeoutMs));
             return false;
         }
 
@@ -167,8 +173,10 @@ public:
         if (res->response != SRV_RES_SUCCESS)
         {
             RCLCPP_ERROR(node_->get_logger(),
-                "[CSM:%s] registerSource: rejected by '%s': %s",
-                name_.c_str(), info.target_csm_name.c_str(), res->reason.c_str());
+                         "[CSM:%s] registerSource: rejected by '%s': %s",
+                         name_.c_str(),
+                         info.target_csm_name.c_str(),
+                         res->reason.c_str());
             return false;
         }
 
@@ -177,9 +185,10 @@ public:
         if (!source)
         {
             RCLCPP_ERROR(node_->get_logger(),
-                "[CSM:%s] registerSource: unsupported type='%s' or mode='%s'",
-                name_.c_str(), info.control_signal_type.c_str(),
-                info.control_signal_mode.c_str());
+                         "[CSM:%s] registerSource: unsupported type='%s' or mode='%s'",
+                         name_.c_str(),
+                         info.control_signal_type.c_str(),
+                         info.control_signal_mode.c_str());
             return false;
         }
 
@@ -189,10 +198,12 @@ public:
         }
 
         RCLCPP_INFO(node_->get_logger(),
-            "[CSM:%s] Source registered: ch='%s' mode='%s' type='%s' target='%s'",
-            name_.c_str(), info.channel_name.c_str(),
-            info.control_signal_mode.c_str(), info.control_signal_type.c_str(),
-            info.target_csm_name.c_str());
+                    "[CSM:%s] Source registered: ch='%s' mode='%s' type='%s' target='%s'",
+                    name_.c_str(),
+                    info.channel_name.c_str(),
+                    info.control_signal_mode.c_str(),
+                    info.control_signal_type.c_str(),
+                    info.target_csm_name.c_str());
         return true;
     }
 
@@ -206,7 +217,8 @@ public:
     {
         std::lock_guard<std::mutex> lk(sourceMtx_);
         auto it = sources_.find(channelName);
-        if (it == sources_.end()) return ControlSignalState::UNKNOWN;
+        if (it == sources_.end())
+            return ControlSignalState::UNKNOWN;
         return it->second->getState();
     }
 
@@ -218,7 +230,8 @@ public:
     {
         std::lock_guard<std::mutex> lk(sinkMtx_);
         auto it = sinks_.find(channelName);
-        if (it == sinks_.end()) return ControlSignalState::UNKNOWN;
+        if (it == sinks_.end())
+            return ControlSignalState::UNKNOWN;
         return it->second->getState();
     }
 
@@ -278,11 +291,9 @@ public:
      * Resolves the type key via ControlSignalFactory; returns
      * CONTROL_SIGNAL_TYPE_UNKNOWN if msgT has not been registered.
      */
-    template<typename msgT>
-    static std::string typeKeyFor()
+    template <typename msgT> static std::string typeKeyFor()
     {
-        const std::string key =
-            ControlSignalFactory::Instance().typeKey(std::type_index(typeid(msgT)));
+        const std::string key = ControlSignalFactory::Instance().typeKey(std::type_index(typeid(msgT)));
         return key.empty() ? msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_UNKNOWN : key;
     }
 
@@ -303,9 +314,7 @@ public:
      * @tparam msgT  ROS 2 message type (sensor_msgs::msg::Joy, geometry_msgs::msg::Twist, etc.)
      * @param  cb    Callback to invoke on each received message (nullptr clears the callback).
      */
-    template<typename msgT>
-    void setSinkMsgCallback(
-        std::function<void(const msgT&, const msg::ControlSignalInfo&)> cb)
+    template <typename msgT> void setSinkMsgCallback(std::function<void(const msgT&, const msg::ControlSignalInfo&)> cb)
     {
         const std::type_index tid(typeid(msgT));
 
@@ -317,12 +326,14 @@ public:
             std::lock_guard<std::mutex> lk(cbMtx_);
             if (cb)
             {
-                typedCbs_[tid] = [cb](std::shared_ptr<BaseControlSignalSink> base,
-                                      const msg::ControlSignalInfo& /*info*/)
+                typedCbs_[tid] =
+                    [cb](std::shared_ptr<BaseControlSignalSink> base, const msg::ControlSignalInfo& /*info*/)
                 {
                     base->setErasedMsgCallback(
                         [cb](const void* m, const msg::ControlSignalInfo& i)
-                        { cb(*static_cast<const msgT*>(m), i); });
+                        {
+                            cb(*static_cast<const msgT*>(m), i);
+                        });
                 };
             }
             else
@@ -339,44 +350,47 @@ public:
                 _applyCbToSink(snk, tid);
         }
     }
+
 private:
     rclcpp::Node* node_;
-    std::string   name_;
+    std::string name_;
 
     mutable std::mutex sourceMtx_;
-    std::map<std::string, std::shared_ptr<BaseControlSignalSource>> sources_; // key: channel_name
-    std::map<std::string, int64_t> sourceTimeoutSinceNs_; // key: channel_name, value: steadyNs() when TIMEOUT first observed
+    std::map<std::string, std::shared_ptr<BaseControlSignalSource>> sources_;  // key: channel_name
+    std::map<std::string, int64_t>
+        sourceTimeoutSinceNs_;  // key: channel_name, value: steadyNs() when TIMEOUT first observed
 
     mutable std::mutex sinkMtx_;
-    std::map<std::string, std::shared_ptr<BaseControlSignalSink>> sinks_;     // key: channel_name
-    std::map<std::string, int64_t> sinkTimeoutSinceNs_;   // key: channel_name, value: steadyNs() when TIMEOUT first observed
+    std::map<std::string, std::shared_ptr<BaseControlSignalSink>> sinks_;  // key: channel_name
+    std::map<std::string, int64_t>
+        sinkTimeoutSinceNs_;  // key: channel_name, value: steadyNs() when TIMEOUT first observed
 
     // Per-type sink callbacks: key = std::type_index of the concrete msgT.
     // Value is a type-erased applicator that installs an erased callback on the
     // Sink (see setSinkMsgCallback / BaseControlSignalSink::setErasedMsgCallback).
-    using CbApplicator = std::function<void(std::shared_ptr<BaseControlSignalSink>,
-                                            const msg::ControlSignalInfo&)>;
-    mutable std::mutex                       cbMtx_;
-    std::map<std::type_index, CbApplicator>  typedCbs_;
+    using CbApplicator = std::function<void(std::shared_ptr<BaseControlSignalSink>, const msg::ControlSignalInfo&)>;
+    mutable std::mutex cbMtx_;
+    std::map<std::type_index, CbApplicator> typedCbs_;
 
     // Apply the registered callback (if any) for the sink's message type.
     // Must be called with sinkMtx_ held (cbMtx_ acquired internally).
-    void _applyCbToSink(std::shared_ptr<BaseControlSignalSink>& snk,
-                        std::type_index tid)
+    void _applyCbToSink(std::shared_ptr<BaseControlSignalSink>& snk, std::type_index tid)
     {
         CbApplicator applicator;
         {
             std::lock_guard<std::mutex> lk(cbMtx_);
             auto it = typedCbs_.find(tid);
-            if (it == typedCbs_.end()) return;
+            if (it == typedCbs_.end())
+                return;
             applicator = it->second;
         }
-        if (applicator) applicator(snk, snk->getInfo());
+        if (applicator)
+            applicator(snk, snk->getInfo());
     }
 
-    rclcpp::Service<srv::ControlSignalReg>::SharedPtr     regSrv_;
+    rclcpp::Service<srv::ControlSignalReg>::SharedPtr regSrv_;
     rclcpp::Service<srv::ControlSignalInfoReq>::SharedPtr infoReqSrv_;
-    rclcpp::TimerBase::SharedPtr                          statusTimer_;
+    rclcpp::TimerBase::SharedPtr statusTimer_;
 
     // ── 1 Hz status timer callback ────────────────────────────────────────────
     /**
@@ -398,8 +412,8 @@ private:
 
             for (auto& [ch, src] : sources_)
             {
-                const ControlSignalState st    = src->getState();
-                const int64_t            discTo = src->getInfo().disconnect_timeout_ns;
+                const ControlSignalState st = src->getState();
+                const int64_t discTo = src->getInfo().disconnect_timeout_ns;
 
                 if (st == ControlSignalState::TIMEOUT && discTo > 0)
                 {
@@ -411,9 +425,10 @@ private:
                     else if (now - it->second > discTo)
                     {
                         RCLCPP_WARN(node_->get_logger(),
-                            "[CSM:%s] Source '%s' has been in TIMEOUT for >%ld ms. Removing.",
-                            name_.c_str(), ch.c_str(),
-                            static_cast<long>(discTo / 1'000'000));
+                                    "[CSM:%s] Source '%s' has been in TIMEOUT for >%ld ms. Removing.",
+                                    name_.c_str(),
+                                    ch.c_str(),
+                                    static_cast<long>(discTo / 1'000'000));
                         src->markDisconnected();
                         toErase.push_back(ch);
                     }
@@ -438,8 +453,8 @@ private:
 
             for (auto& [ch, snk] : sinks_)
             {
-                const ControlSignalState st    = snk->getState();
-                const int64_t            discTo = snk->getInfo().disconnect_timeout_ns;
+                const ControlSignalState st = snk->getState();
+                const int64_t discTo = snk->getInfo().disconnect_timeout_ns;
 
                 if (st == ControlSignalState::TIMEOUT && discTo > 0)
                 {
@@ -451,9 +466,10 @@ private:
                     else if (now - it->second > discTo)
                     {
                         RCLCPP_WARN(node_->get_logger(),
-                            "[CSM:%s] Sink '%s' has been in TIMEOUT for >%ld ms. Removing.",
-                            name_.c_str(), ch.c_str(),
-                            static_cast<long>(discTo / 1'000'000));
+                                    "[CSM:%s] Sink '%s' has been in TIMEOUT for >%ld ms. Removing.",
+                                    name_.c_str(),
+                                    ch.c_str(),
+                                    static_cast<long>(discTo / 1'000'000));
                         snk->markDisconnected();
                         toErase.push_back(ch);
                     }
@@ -472,8 +488,10 @@ private:
         }
 
         RCLCPP_DEBUG(node_->get_logger(),
-            "[CSM:%s] Status: %zu source(s), %zu sink(s)",
-            name_.c_str(), sources_.size(), sinks_.size());
+                     "[CSM:%s] Status: %zu source(s), %zu sink(s)",
+                     name_.c_str(),
+                     sources_.size(),
+                     sinks_.size());
     }
 
     // ── ControlSignalReg service callback ──────────────────────────────────────
@@ -481,9 +499,8 @@ private:
      * Receives a source registration from a remote CSM.
      * Creates a matching Sink and stores it. Rejects duplicates.
      */
-    void _onReg(
-        const std::shared_ptr<srv::ControlSignalReg::Request>  req,
-        std::shared_ptr<srv::ControlSignalReg::Response>       res)
+    void _onReg(const std::shared_ptr<srv::ControlSignalReg::Request> req,
+                std::shared_ptr<srv::ControlSignalReg::Response> res)
     {
         const auto& info = req->control_signal_source_info;
 
@@ -493,10 +510,12 @@ private:
             if (!v.valid)
             {
                 res->response = SRV_RES_ERROR;
-                res->reason   = "Invalid ControlSignalInfo: " + v.error;
+                res->reason = "Invalid ControlSignalInfo: " + v.error;
                 RCLCPP_ERROR(node_->get_logger(),
-                    "[CSM:%s] _onReg from '%s': %s",
-                    name_.c_str(), req->source_csm_name.c_str(), res->reason.c_str());
+                             "[CSM:%s] _onReg from '%s': %s",
+                             name_.c_str(),
+                             req->source_csm_name.c_str(),
+                             res->reason.c_str());
                 return;
             }
         }
@@ -506,10 +525,12 @@ private:
             if (sinks_.count(info.channel_name))
             {
                 res->response = SRV_RES_IGNORED;
-                res->reason   = "Sink already exists for channel: " + info.channel_name;
+                res->reason = "Sink already exists for channel: " + info.channel_name;
                 RCLCPP_WARN(node_->get_logger(),
-                    "[CSM:%s] _onReg from '%s': %s",
-                    name_.c_str(), req->source_csm_name.c_str(), res->reason.c_str());
+                            "[CSM:%s] _onReg from '%s': %s",
+                            name_.c_str(),
+                            req->source_csm_name.c_str(),
+                            res->reason.c_str());
                 return;
             }
         }
@@ -518,19 +539,19 @@ private:
         if (!sink)
         {
             res->response = SRV_RES_ERROR;
-            res->reason   = "Unsupported type='" + info.control_signal_type +
-                            "' mode='" + info.control_signal_mode + "'";
+            res->reason = "Unsupported type='" + info.control_signal_type + "' mode='" + info.control_signal_mode + "'";
             RCLCPP_ERROR(node_->get_logger(),
-                "[CSM:%s] _onReg from '%s': %s",
-                name_.c_str(), req->source_csm_name.c_str(), res->reason.c_str());
+                         "[CSM:%s] _onReg from '%s': %s",
+                         name_.c_str(),
+                         req->source_csm_name.c_str(),
+                         res->reason.c_str());
             return;
         }
 
         {
             std::lock_guard<std::mutex> lk(sinkMtx_);
             sinks_[info.channel_name] = sink;
-            _applyCbToSink(sinks_[info.channel_name],
-                           sinks_[info.channel_name]->msgType());
+            _applyCbToSink(sinks_[info.channel_name], sinks_[info.channel_name]->msgType());
         }
 
         res->response = SRV_RES_SUCCESS;
@@ -538,19 +559,20 @@ private:
             res->keep_alive_topic_name = info.channel_name + "_keep_alive";
 
         RCLCPP_INFO(node_->get_logger(),
-            "[CSM:%s] Sink created from source CSM '%s': ch='%s' mode='%s' type='%s'",
-            name_.c_str(), req->source_csm_name.c_str(),
-            info.channel_name.c_str(),
-            info.control_signal_mode.c_str(), info.control_signal_type.c_str());
+                    "[CSM:%s] Sink created from source CSM '%s': ch='%s' mode='%s' type='%s'",
+                    name_.c_str(),
+                    req->source_csm_name.c_str(),
+                    info.channel_name.c_str(),
+                    info.control_signal_mode.c_str(),
+                    info.control_signal_type.c_str());
     }
 
     // ── ControlSignalInfoReq service callback ──────────────────────────────────
     /**
      * Returns the ControlSignalInfo for all managed Sources and Sinks.
      */
-    void _onInfoReq(
-        const std::shared_ptr<srv::ControlSignalInfoReq::Request>  /*req*/,
-        std::shared_ptr<srv::ControlSignalInfoReq::Response>        res)
+    void _onInfoReq(const std::shared_ptr<srv::ControlSignalInfoReq::Request> /*req*/,
+                    std::shared_ptr<srv::ControlSignalInfoReq::Response> res)
     {
         {
             std::lock_guard<std::mutex> lk(sourceMtx_);
@@ -577,8 +599,7 @@ private:
     {
         try
         {
-            return ControlSignalFactory::Instance()
-                .CreateSource(info.control_signal_type, node_, info);
+            return ControlSignalFactory::Instance().CreateSource(info.control_signal_type, node_, info);
         }
         catch (const std::runtime_error&)
         {
@@ -594,8 +615,7 @@ private:
     {
         try
         {
-            return ControlSignalFactory::Instance()
-                .CreateSink(info.control_signal_type, node_, info);
+            return ControlSignalFactory::Instance().CreateSink(info.control_signal_type, node_, info);
         }
         catch (const std::runtime_error&)
         {
@@ -604,5 +624,4 @@ private:
     }
 };
 
-
-} // namespace rv2_interfaces
+}  // namespace rv2_interfaces

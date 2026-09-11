@@ -32,9 +32,9 @@ using rv2_interfaces::r1::ControlSignalInfo;
 using rv2_interfaces::r1::ControlSignalState;
 using rv2_interfaces::r1::EntityDecision;
 using rv2_interfaces::r1::LivenessCause;
+using rv2_interfaces::r1::makeTransportInfo;
 using rv2_interfaces::r1::ManagerTestAccess;
 using rv2_interfaces::r1::SendResult;
-using rv2_interfaces::r1::makeTransportInfo;
 using rv2_interfaces::r1::steadyNowNs;
 using Joy = sensor_msgs::msg::Joy;
 using JoySrv = r1_interfaces::srv::ControlSignalJoy;
@@ -52,28 +52,27 @@ Joy makeJoy(float axis0)
 
 ControlSignalInfo topicInfo(const std::string& channel)
 {
-    return makeTransportInfo(channel, ControlSignalInfo::MODE_TOPIC,
-                             ControlSignalInfo::TYPE_JOY, kTimeout, kDisconnect);
+    return makeTransportInfo(
+        channel, ControlSignalInfo::MODE_TOPIC, ControlSignalInfo::TYPE_JOY, kTimeout, kDisconnect);
 }
 
 ControlSignalInfo serviceInfo(const std::string& channel)
 {
-    return makeTransportInfo(channel, ControlSignalInfo::MODE_SERVICE,
-                             ControlSignalInfo::TYPE_JOY, kTimeout, kDisconnect);
+    return makeTransportInfo(
+        channel, ControlSignalInfo::MODE_SERVICE, ControlSignalInfo::TYPE_JOY, kTimeout, kDisconnect);
 }
 
 class SourceTest : public rv2_interfaces::r1::CsmTestBase
 {
 protected:
     /// Serving mock: answers every request on the shared executor.
-    rclcpp::Service<JoySrv>::SharedPtr makeServer(const std::string& channel,
-                                                  int8_t response,
-                                                  std::atomic<int>* hits = nullptr)
+    rclcpp::Service<JoySrv>::SharedPtr
+    makeServer(const std::string& channel, int8_t response, std::atomic<int>* hits = nullptr)
     {
         return node_->create_service<JoySrv>(
             channel,
-            [response, hits](const std::shared_ptr<JoySrv::Request>,
-                             std::shared_ptr<JoySrv::Response> res) {
+            [response, hits](const std::shared_ptr<JoySrv::Request>, std::shared_ptr<JoySrv::Response> res)
+            {
                 if (hits)
                     hits->fetch_add(1);
                 res->response = response;
@@ -112,8 +111,7 @@ TEST_F(SourceTest, S2_TopicSendThenTick)
 TEST_F(SourceTest, S3_ServiceSendSuccess)
 {
     auto server = makeServer("s3/joy", JoySrv::Response::SRV_RES_SUCCESS);
-    auto src = ManagerTestAccess::createSource<Joy, JoySrv>(node_.get(),
-                                                            serviceInfo("s3/joy"));
+    auto src = ManagerTestAccess::createSource<Joy, JoySrv>(node_.get(), serviceInfo("s3/joy"));
     // Guard against discovery latency: the row expects OK, not a spurious
     // NO_TRANSPORT from a not-yet-discovered server.
     auto probe = node_->create_client<JoySrv>("s3/joy");
@@ -131,8 +129,7 @@ TEST_F(SourceTest, S3_ServiceSendSuccess)
 TEST_F(SourceTest, S4_ServiceRejectedStillActivity)
 {
     auto server = makeServer("s4/joy", JoySrv::Response::SRV_RES_REJECTED);
-    auto src = ManagerTestAccess::createSource<Joy, JoySrv>(node_.get(),
-                                                            serviceInfo("s4/joy"));
+    auto src = ManagerTestAccess::createSource<Joy, JoySrv>(node_.get(), serviceInfo("s4/joy"));
     auto probe = node_->create_client<JoySrv>("s4/joy");
     ASSERT_TRUE(probe->wait_for_service(3s));
     EXPECT_EQ(src->send(makeJoy(1.f)), SendResult::REJECTED);
@@ -147,8 +144,7 @@ TEST_F(SourceTest, S4_ServiceRejectedStillActivity)
 TEST_F(SourceTest, S5_ServiceFailureStreak)
 {
     // (a) no server at all -> NO_TRANSPORT.
-    auto src = ManagerTestAccess::createSource<Joy, JoySrv>(node_.get(),
-                                                            serviceInfo("s5/joy"));
+    auto src = ManagerTestAccess::createSource<Joy, JoySrv>(node_.get(), serviceInfo("s5/joy"));
     EXPECT_EQ(src->send(makeJoy(1.f)), SendResult::NO_TRANSPORT);
 
     // (b) discovered but never served (server node not spun) -> TIMEOUT.
@@ -156,12 +152,13 @@ TEST_F(SourceTest, S5_ServiceFailureStreak)
     // waits accumulate real time that must not cross it prematurely.
     const int64_t longDisconnect = 10'000 * kMs;
     const auto infoB = rv2_interfaces::r1::makeTransportInfo(
-        "s5b/joy", ControlSignalInfo::MODE_SERVICE, ControlSignalInfo::TYPE_JOY,
-        kTimeout, longDisconnect);
+        "s5b/joy", ControlSignalInfo::MODE_SERVICE, ControlSignalInfo::TYPE_JOY, kTimeout, longDisconnect);
     auto deadNode = std::make_shared<rclcpp::Node>("s5_dead_server");
-    auto deadServer = deadNode->create_service<JoySrv>(
-        "s5b/joy", [](const std::shared_ptr<JoySrv::Request>,
-                      std::shared_ptr<JoySrv::Response>) {});
+    auto deadServer =
+        deadNode->create_service<JoySrv>("s5b/joy",
+                                         [](const std::shared_ptr<JoySrv::Request>, std::shared_ptr<JoySrv::Response>)
+                                         {
+                                         });
     auto src2 = ManagerTestAccess::createSource<Joy, JoySrv>(node_.get(), infoB);
     // Wait for discovery, then send: the request is never processed.
     for (int i = 0; i < 100 && src2->send(makeJoy(1.f)) == SendResult::NO_TRANSPORT; ++i)
@@ -174,7 +171,7 @@ TEST_F(SourceTest, S5_ServiceFailureStreak)
     // still ACTIVE — only the failure streak can force TIMEOUT here.
     for (int i = 0; i < 2; ++i)
         EXPECT_EQ(src2->send(makeJoy(1.f)), SendResult::TIMEOUT);
-    const int64_t tEntry = steadyNowNs();   // last send records activity ~here
+    const int64_t tEntry = steadyNowNs();  // last send records activity ~here
     EXPECT_EQ(src2->send(makeJoy(1.f)), SendResult::TIMEOUT);
     auto d = ManagerTestAccess::calc(*src2, tEntry + 10 * kMs);
     EXPECT_EQ(d.status.state, ControlSignalState::TIMEOUT);
@@ -192,7 +189,7 @@ TEST_F(SourceTest, S6_ShutdownIdempotent)
     auto src = ManagerTestAccess::createSource<Joy>(node_.get(), topicInfo("s6/joy"));
     src->shutdown();
     EXPECT_EQ(src->send(makeJoy(1.f)), SendResult::NO_TRANSPORT);
-    src->shutdown();   // second call: no effect, no crash
+    src->shutdown();  // second call: no effect, no crash
     EXPECT_EQ(src->send(makeJoy(1.f)), SendResult::NO_TRANSPORT);
 }
 
@@ -244,9 +241,8 @@ TEST_F(SourceTest, S9_DisconnectDecision)
 // sendRateHz() reads the same value; one idle window later it is 0.
 TEST_F(SourceTest, S10_SendRate)
 {
-    constexpr int64_t kWindow = 1'000'000'000;   // 1 s
-    auto src = ManagerTestAccess::createSource<Joy>(node_.get(), topicInfo("s10/joy"),
-                                                    kWindow);
+    constexpr int64_t kWindow = 1'000'000'000;  // 1 s
+    auto src = ManagerTestAccess::createSource<Joy>(node_.get(), topicInfo("s10/joy"), kWindow);
     for (int i = 0; i < 40; ++i)
     {
         ASSERT_EQ(src->send(makeJoy(1.f)), SendResult::OK);
@@ -271,17 +267,21 @@ TEST_F(SourceTest, S11_RateConcurrency)
     auto src = ManagerTestAccess::createSource<Joy>(node_.get(), topicInfo("s11/joy"));
     std::atomic<bool> stop{false};
 
-    std::thread sender([&] {
-        while (!stop.load())
+    std::thread sender(
+        [&]
         {
-            src->send(makeJoy(1.f));
-            std::this_thread::sleep_for(1ms);
-        }
-    });
-    std::thread reader([&] {
-        while (!stop.load())
-            (void)src->sendRateHz();
-    });
+            while (!stop.load())
+            {
+                src->send(makeJoy(1.f));
+                std::this_thread::sleep_for(1ms);
+            }
+        });
+    std::thread reader(
+        [&]
+        {
+            while (!stop.load())
+                (void)src->sendRateHz();
+        });
     for (int i = 0; i < 50; ++i)
     {
         const auto d = ManagerTestAccess::calc(*src, steadyNowNs());
@@ -304,22 +304,22 @@ TEST_F(SourceTest, S12_StateCallbacks)
     std::atomic<int> activeFires{0}, timeoutFires{0};
     std::thread::id cbThread;
     std::vector<ControlSignalState> activeOlds;
-    src->setStateCallback(
-        ControlSignalState::ACTIVE,
-        [&](const std::string& ctrl, ControlSignalState oldS, ControlSignalState newS) {
-            EXPECT_EQ(ctrl, "ctrl_s12/joy");
-            EXPECT_EQ(newS, ControlSignalState::ACTIVE);
-            activeOlds.push_back(oldS);
-            cbThread = std::this_thread::get_id();
-            activeFires.fetch_add(1);
-        });
-    src->setStateCallback(
-        ControlSignalState::TIMEOUT,
-        [&](const std::string&, ControlSignalState oldS, ControlSignalState newS) {
-            EXPECT_EQ(oldS, ControlSignalState::ACTIVE);
-            EXPECT_EQ(newS, ControlSignalState::TIMEOUT);
-            timeoutFires.fetch_add(1);
-        });
+    src->setStateCallback(ControlSignalState::ACTIVE,
+                          [&](const std::string& ctrl, ControlSignalState oldS, ControlSignalState newS)
+                          {
+                              EXPECT_EQ(ctrl, "ctrl_s12/joy");
+                              EXPECT_EQ(newS, ControlSignalState::ACTIVE);
+                              activeOlds.push_back(oldS);
+                              cbThread = std::this_thread::get_id();
+                              activeFires.fetch_add(1);
+                          });
+    src->setStateCallback(ControlSignalState::TIMEOUT,
+                          [&](const std::string&, ControlSignalState oldS, ControlSignalState newS)
+                          {
+                              EXPECT_EQ(oldS, ControlSignalState::ACTIVE);
+                              EXPECT_EQ(newS, ControlSignalState::TIMEOUT);
+                              timeoutFires.fetch_add(1);
+                          });
 
     ASSERT_EQ(src->send(makeJoy(1.f)), SendResult::OK);
     const int64_t sent = steadyNowNs();
@@ -327,7 +327,7 @@ TEST_F(SourceTest, S12_StateCallbacks)
     // INITIAL -> ACTIVE
     ManagerTestAccess::apply(*src, ManagerTestAccess::calc(*src, sent));
     EXPECT_EQ(activeFires.load(), 1);
-    EXPECT_EQ(cbThread, std::this_thread::get_id());   // tick (caller) thread
+    EXPECT_EQ(cbThread, std::this_thread::get_id());  // tick (caller) thread
 
     // Same state again: no fire.
     ManagerTestAccess::apply(*src, ManagerTestAccess::calc(*src, sent));
@@ -347,20 +347,17 @@ TEST_F(SourceTest, S12_StateCallbacks)
 
     // nullptr clears: the transition demonstrably happens, no fire.
     src->setStateCallback(ControlSignalState::TIMEOUT, nullptr);
-    ManagerTestAccess::apply(*src,
-                             ManagerTestAccess::calc(*src, steadyNowNs() + kTimeout + kMs));
-    EXPECT_EQ(src->getState(), ControlSignalState::TIMEOUT);   // transition occurred
-    EXPECT_EQ(timeoutFires.load(), 1);                          // but slot cleared
+    ManagerTestAccess::apply(*src, ManagerTestAccess::calc(*src, steadyNowNs() + kTimeout + kMs));
+    EXPECT_EQ(src->getState(), ControlSignalState::TIMEOUT);  // transition occurred
+    EXPECT_EQ(timeoutFires.load(), 1);  // but slot cleared
 }
 
 // S13: window configuration — 0.5 s vs 2 s windows converge on their own
 // timescale; getStatus() returns consistent {state, rate}.
 TEST_F(SourceTest, S13_WindowConfiguration)
 {
-    auto fast = ManagerTestAccess::createSource<Joy>(node_.get(), topicInfo("s13a/joy"),
-                                                     500 * kMs);
-    auto slow = ManagerTestAccess::createSource<Joy>(node_.get(), topicInfo("s13b/joy"),
-                                                     2000 * kMs);
+    auto fast = ManagerTestAccess::createSource<Joy>(node_.get(), topicInfo("s13a/joy"), 500 * kMs);
+    auto slow = ManagerTestAccess::createSource<Joy>(node_.get(), topicInfo("s13b/joy"), 2000 * kMs);
     // ~20 Hz for ~1 s: the 0.5 s window is fully converged (~20 Hz), the 2 s
     // window still averages over its longer span (~10 Hz).
     for (int i = 0; i < 20; ++i)
@@ -388,8 +385,7 @@ TEST_F(SourceTest, S13_WindowConfiguration)
 // the epoch; an older timeout must not overwrite.
 TEST_F(SourceTest, S14_OutOfOrderOutcomes)
 {
-    auto src = ManagerTestAccess::createSource<Joy, JoySrv>(node_.get(),
-                                                            serviceInfo("s14/joy"));
+    auto src = ManagerTestAccess::createSource<Joy, JoySrv>(node_.get(), serviceInfo("s14/joy"));
     const int64_t t0 = steadyNowNs();
 
     // seq 2 fails first (out-of-order: seq 1 still in flight).
@@ -427,16 +423,20 @@ TEST_F(SourceTest, S15_InactivitySealVsSend)
     const int64_t sent = steadyNowNs();
     auto d = ManagerTestAccess::calc(*src, sent + kDisconnect + kMs);
     ASSERT_EQ(d.status.state, ControlSignalState::DISCONNECTED);
-    ASSERT_EQ(src->send(makeJoy(1.f)), SendResult::OK);   // activity wins
+    ASSERT_EQ(src->send(makeJoy(1.f)), SendResult::OK);  // activity wins
     EXPECT_FALSE(ManagerTestAccess::trySealLocalTerminal(*src, d));
-    EXPECT_EQ(src->getState(), ControlSignalState::INITIAL);   // nothing applied
+    EXPECT_EQ(src->getState(), ControlSignalState::INITIAL);  // nothing applied
 
     // (b) seal wins: send is DISCONNECTED and the transport is really left
     // untouched — a counting subscriber sees no publication.
     auto src2 = ManagerTestAccess::createSource<Joy>(node_.get(), topicInfo("s15b/joy"));
     std::atomic<int> delivered{0};
-    auto counter = node_->create_subscription<Joy>(
-        "s15b/joy", 10, [&](const Joy&) { delivered.fetch_add(1); });
+    auto counter = node_->create_subscription<Joy>("s15b/joy",
+                                                   10,
+                                                   [&](const Joy&)
+                                                   {
+                                                       delivered.fetch_add(1);
+                                                   });
     ASSERT_EQ(src2->send(makeJoy(1.f)), SendResult::OK);
     const int64_t sent2 = steadyNowNs();
     for (int i = 0; i < 100 && delivered.load() < 1; ++i)
@@ -448,7 +448,7 @@ TEST_F(SourceTest, S15_InactivitySealVsSend)
     ASSERT_TRUE(ManagerTestAccess::trySealLocalTerminal(*src2, d));
     EXPECT_EQ(src2->send(makeJoy(1.f)), SendResult::DISCONNECTED);
     std::this_thread::sleep_for(200ms);
-    EXPECT_EQ(delivered.load(), 1);   // sealed send never touched the publisher
+    EXPECT_EQ(delivered.load(), 1);  // sealed send never touched the publisher
     ManagerTestAccess::apply(*src2, d);
     EXPECT_EQ(src2->getState(), ControlSignalState::DISCONNECTED);
 }
@@ -463,8 +463,7 @@ TEST_F(SourceTest, S16_ResponseFailureTerminal)
     // The send advances the activity generation — the RESPONSE_FAILURE seal
     // must validate the failure epoch, not the generation (§5.3: a new send
     // call is not a response recovery).
-    auto src = ManagerTestAccess::createSource<Joy, JoySrv>(node_.get(),
-                                                            serviceInfo("s16a/joy"));
+    auto src = ManagerTestAccess::createSource<Joy, JoySrv>(node_.get(), serviceInfo("s16a/joy"));
     const int64_t t0 = steadyNowNs();
     ManagerTestAccess::recordOutcomeFailure(*src, 10, t0);
     auto d = ManagerTestAccess::calc(*src, t0 + kDisconnect + kMs);
@@ -474,38 +473,41 @@ TEST_F(SourceTest, S16_ResponseFailureTerminal)
     // outcome (10), so the streak record stays untouched — but the activity
     // generation moved.
     EXPECT_EQ(src->send(makeJoy(1.f)), SendResult::NO_TRANSPORT);
-    ManagerTestAccess::recordOutcomeFailure(*src, 11, t0 + kMs);   // streak continues
+    ManagerTestAccess::recordOutcomeFailure(*src, 11, t0 + kMs);  // streak continues
     EXPECT_TRUE(ManagerTestAccess::trySealLocalTerminal(*src, d));
 
     // (b) a newer success changes the epoch first: old decision cancelled.
-    auto src2 = ManagerTestAccess::createSource<Joy, JoySrv>(node_.get(),
-                                                             serviceInfo("s16b/joy"));
+    auto src2 = ManagerTestAccess::createSource<Joy, JoySrv>(node_.get(), serviceInfo("s16b/joy"));
     ManagerTestAccess::recordOutcomeFailure(*src2, 1, t0);
     d = ManagerTestAccess::calc(*src2, t0 + kDisconnect + kMs);
     ASSERT_EQ(d.cause, LivenessCause::RESPONSE_FAILURE);
-    ManagerTestAccess::recordOutcomeSuccess(*src2, 2);   // epoch bumps
+    ManagerTestAccess::recordOutcomeSuccess(*src2, 2);  // epoch bumps
     EXPECT_FALSE(ManagerTestAccess::trySealLocalTerminal(*src2, d));
 
     // (c) seal wins while a request is IN FLIGHT: the response arrives after
     // the seal and the response path — not the send preamble — must report
     // DISCONNECTED (§5.3: response 到達時 terminal seal 已勝出 → DISCONNECTED).
     const auto infoC = rv2_interfaces::r1::makeTransportInfo(
-        "s16c/joy", ControlSignalInfo::MODE_SERVICE, ControlSignalInfo::TYPE_JOY,
-        2'000 * kMs, 20'000 * kMs);
-    auto slowServer = node_->create_service<JoySrv>(
-        "s16c/joy", [](const std::shared_ptr<JoySrv::Request>,
-                       std::shared_ptr<JoySrv::Response> res) {
-            std::this_thread::sleep_for(400ms);   // hold the request in flight
-            res->response = JoySrv::Response::SRV_RES_SUCCESS;
-        });
+        "s16c/joy", ControlSignalInfo::MODE_SERVICE, ControlSignalInfo::TYPE_JOY, 2'000 * kMs, 20'000 * kMs);
+    auto slowServer =
+        node_->create_service<JoySrv>("s16c/joy",
+                                      [](const std::shared_ptr<JoySrv::Request>, std::shared_ptr<JoySrv::Response> res)
+                                      {
+                                          std::this_thread::sleep_for(400ms);  // hold the request in flight
+                                          res->response = JoySrv::Response::SRV_RES_SUCCESS;
+                                      });
     auto src3 = ManagerTestAccess::createSource<Joy, JoySrv>(node_.get(), infoC);
     auto probe = node_->create_client<JoySrv>("s16c/joy");
     ASSERT_TRUE(probe->wait_for_service(3s));
 
     std::atomic<SendResult> inFlight{SendResult::OK};
-    std::thread sender([&] { inFlight.store(src3->send(makeJoy(1.f))); });
-    std::this_thread::sleep_for(150ms);          // request is now in flight
-    ManagerTestAccess::sealTerminal(*src3);      // seal wins before the response
+    std::thread sender(
+        [&]
+        {
+            inFlight.store(src3->send(makeJoy(1.f)));
+        });
+    std::this_thread::sleep_for(150ms);  // request is now in flight
+    ManagerTestAccess::sealTerminal(*src3);  // seal wins before the response
     sender.join();
     EXPECT_EQ(inFlight.load(), SendResult::DISCONNECTED);
 }
@@ -520,7 +522,7 @@ TEST_F(SinkTest, K1_Initial)
     Joy out = makeJoy(42.f);
     EXPECT_FALSE(sink->read(out));
     ASSERT_EQ(out.axes.size(), 1u);
-    EXPECT_FLOAT_EQ(out.axes[0], 42.f);   // untouched default
+    EXPECT_FLOAT_EQ(out.axes[0], 42.f);  // untouched default
 }
 
 // K2: first message + tick — before the tick read() is false (granularity
@@ -530,16 +532,18 @@ TEST_F(SinkTest, K2_FirstMessageGranularity)
     auto sink = ManagerTestAccess::createSink<Joy>(node_.get(), topicInfo("k2/joy"));
     auto pub = node_->create_publisher<Joy>("k2/joy", 10);
 
-    std::thread waiter([&] {
-        Joy out;
-        EXPECT_TRUE(sink->waitForMessage(out, 3'000 * kMs));
-    });
+    std::thread waiter(
+        [&]
+        {
+            Joy out;
+            EXPECT_TRUE(sink->waitForMessage(out, 3'000 * kMs));
+        });
     std::this_thread::sleep_for(100ms);
     pub->publish(makeJoy(7.f));
-    waiter.join();   // message has arrived
+    waiter.join();  // message has arrived
 
     Joy out;
-    EXPECT_FALSE(sink->read(out));   // pre-tick: still INITIAL
+    EXPECT_FALSE(sink->read(out));  // pre-tick: still INITIAL
     ManagerTestAccess::apply(*sink, ManagerTestAccess::calc(*sink, steadyNowNs()));
     EXPECT_EQ(sink->getState(), ControlSignalState::ACTIVE);
     ASSERT_TRUE(sink->read(out));
@@ -552,10 +556,12 @@ void publishAndWait(rclcpp::Publisher<Joy>::SharedPtr pub,
                     const std::shared_ptr<rv2_interfaces::r1::ControlSignalSink<Joy>>& sink,
                     float axis0)
 {
-    std::thread waiter([&] {
-        Joy out;
-        EXPECT_TRUE(sink->waitForMessage(out, 3'000 * kMs));
-    });
+    std::thread waiter(
+        [&]
+        {
+            Joy out;
+            EXPECT_TRUE(sink->waitForMessage(out, 3'000 * kMs));
+        });
     std::this_thread::sleep_for(50ms);
     pub->publish(makeJoy(axis0));
     waiter.join();
@@ -590,8 +596,7 @@ TEST_F(SinkTest, K4_TimeoutRecovers)
     auto sink = ManagerTestAccess::createSink<Joy>(node_.get(), topicInfo("k4/joy"));
     auto pub = node_->create_publisher<Joy>("k4/joy", 10);
     publishAndWait(pub, sink, 1.f);
-    ManagerTestAccess::apply(*sink,
-                             ManagerTestAccess::calc(*sink, steadyNowNs() + kTimeout + kMs));
+    ManagerTestAccess::apply(*sink, ManagerTestAccess::calc(*sink, steadyNowNs() + kTimeout + kMs));
     ASSERT_EQ(sink->getState(), ControlSignalState::TIMEOUT);
 
     publishAndWait(pub, sink, 2.f);
@@ -609,15 +614,17 @@ TEST_F(SinkTest, K5_MsgCallback)
     std::atomic<int> first{0}, second{0};
     std::vector<float> seen;
     std::mutex seenMtx;
-    sink->setMsgCallback([&](const Joy& m, const ControlSignalInfo& info) {
-        ASSERT_EQ(m.axes.size(), 1u);
-        EXPECT_EQ(info.channel_name, "k5/joy");
+    sink->setMsgCallback(
+        [&](const Joy& m, const ControlSignalInfo& info)
         {
-            std::lock_guard<std::mutex> lk(seenMtx);
-            seen.push_back(m.axes[0]);
-        }
-        first.fetch_add(1);
-    });
+            ASSERT_EQ(m.axes.size(), 1u);
+            EXPECT_EQ(info.channel_name, "k5/joy");
+            {
+                std::lock_guard<std::mutex> lk(seenMtx);
+                seen.push_back(m.axes[0]);
+            }
+            first.fetch_add(1);
+        });
     publishAndWait(pub, sink, 1.f);
     publishAndWait(pub, sink, 2.f);
     EXPECT_EQ(first.load(), 2);
@@ -629,9 +636,11 @@ TEST_F(SinkTest, K5_MsgCallback)
     }
 
     // Replace: only the new callback fires from now on.
-    sink->setMsgCallback([&](const Joy&, const ControlSignalInfo&) {
-        second.fetch_add(1);
-    });
+    sink->setMsgCallback(
+        [&](const Joy&, const ControlSignalInfo&)
+        {
+            second.fetch_add(1);
+        });
     publishAndWait(pub, sink, 3.f);
     EXPECT_EQ(first.load(), 2);
     EXPECT_EQ(second.load(), 1);
@@ -650,13 +659,15 @@ TEST_F(SinkTest, K6_CallbackReenter)
     auto pub = node_->create_publisher<Joy>("k6/joy", 10);
 
     std::atomic<int> fires{0};
-    sink->setMsgCallback([&](const Joy&, const ControlSignalInfo&) {
-        Joy out;
-        (void)sink->read(out);          // re-enter under no held lock
-        (void)sink->getState();
-        (void)sink->getStatus();
-        fires.fetch_add(1);
-    });
+    sink->setMsgCallback(
+        [&](const Joy&, const ControlSignalInfo&)
+        {
+            Joy out;
+            (void)sink->read(out);  // re-enter under no held lock
+            (void)sink->getState();
+            (void)sink->getStatus();
+            fires.fetch_add(1);
+        });
     publishAndWait(pub, sink, 1.f);
     EXPECT_EQ(fires.load(), 1);
 }
@@ -665,8 +676,7 @@ TEST_F(SinkTest, K6_CallbackReenter)
 // SUCCESS.
 TEST_F(SinkTest, K7_ServiceRoundTrip)
 {
-    auto sink = ManagerTestAccess::createSink<Joy, JoySrv>(node_.get(),
-                                                           serviceInfo("k7/joy"));
+    auto sink = ManagerTestAccess::createSink<Joy, JoySrv>(node_.get(), serviceInfo("k7/joy"));
     auto client = node_->create_client<JoySrv>("k7/joy");
     ASSERT_TRUE(client->wait_for_service(3s));
 
@@ -694,9 +704,9 @@ TEST_F(SinkTest, K8_ConfirmedDeath)
     publishAndWait(pub, sink, 1.f);
     auto d = ManagerTestAccess::calc(*sink, steadyNowNs() + kDisconnect + kMs);
     ASSERT_EQ(d.status.state, ControlSignalState::DISCONNECTED);
-    publishAndWait(pub, sink, 2.f);   // activity wins
+    publishAndWait(pub, sink, 2.f);  // activity wins
     EXPECT_FALSE(ManagerTestAccess::trySealLocalTerminal(*sink, d));
-    EXPECT_EQ(sink->getState(), ControlSignalState::INITIAL);   // nothing applied
+    EXPECT_EQ(sink->getState(), ControlSignalState::INITIAL);  // nothing applied
 
     // (b) seal succeeds: apply, then later messages are rejected.
     auto sink2 = ManagerTestAccess::createSink<Joy>(node_.get(), topicInfo("k8b/joy"));
@@ -709,12 +719,14 @@ TEST_F(SinkTest, K8_ConfirmedDeath)
     EXPECT_EQ(sink2->getState(), ControlSignalState::DISCONNECTED);
 
     std::atomic<int> lateFires{0};
-    sink2->setMsgCallback([&](const Joy&, const ControlSignalInfo&) {
-        lateFires.fetch_add(1);
-    });
+    sink2->setMsgCallback(
+        [&](const Joy&, const ControlSignalInfo&)
+        {
+            lateFires.fetch_add(1);
+        });
     pub2->publish(makeJoy(3.f));
     std::this_thread::sleep_for(300ms);
-    EXPECT_EQ(lateFires.load(), 0);   // sealed: no store, no callback
+    EXPECT_EQ(lateFires.load(), 0);  // sealed: no store, no callback
 }
 
 // K9: upstream keeps publishing after shutdown — no callback, no recorded
@@ -726,9 +738,11 @@ TEST_F(SinkTest, K9_ShutdownStopsIntake)
     publishAndWait(pub, sink, 1.f);
 
     std::atomic<int> fires{0};
-    sink->setMsgCallback([&](const Joy&, const ControlSignalInfo&) {
-        fires.fetch_add(1);
-    });
+    sink->setMsgCallback(
+        [&](const Joy&, const ControlSignalInfo&)
+        {
+            fires.fetch_add(1);
+        });
     sink->shutdown();
     for (int i = 0; i < 5; ++i)
     {
@@ -744,25 +758,27 @@ TEST_F(SinkTest, K10_WeakCaptureUafRegression)
 {
     auto pub = node_->create_publisher<Joy>("k10/joy", 10);
     std::atomic<bool> stop{false};
-    std::thread flooder([&] {
-        while (!stop.load())
+    std::thread flooder(
+        [&]
         {
-            pub->publish(makeJoy(1.f));
-            std::this_thread::sleep_for(1ms);
-        }
-    });
+            while (!stop.load())
+            {
+                pub->publish(makeJoy(1.f));
+                std::this_thread::sleep_for(1ms);
+            }
+        });
     int sawIntake = 0;
     for (int i = 0; i < 20; ++i)
     {
         auto sink = ManagerTestAccess::createSink<Joy>(node_.get(), topicInfo("k10/joy"));
         Joy out;
         if (sink->waitForMessage(out, 500 * kMs))
-            ++sawIntake;   // prove real intake happened before destruction
-        sink.reset();      // destroyed while the flood continues
+            ++sawIntake;  // prove real intake happened before destruction
+        sink.reset();  // destroyed while the flood continues
     }
     stop.store(true);
     flooder.join();
-    EXPECT_GT(sawIntake, 0);   // the scenario really exercised live intake
+    EXPECT_GT(sawIntake, 0);  // the scenario really exercised live intake
 }
 
 // K11: data rate — 20 Hz for 2 s then tick: within [18, 22]; dataRateHz()
@@ -770,14 +786,15 @@ TEST_F(SinkTest, K10_WeakCaptureUafRegression)
 TEST_F(SinkTest, K11_DataRate)
 {
     constexpr int64_t kWindow = 1'000'000'000;
-    auto sink = ManagerTestAccess::createSink<Joy>(node_.get(), topicInfo("k11/joy"),
-                                                   kWindow);
+    auto sink = ManagerTestAccess::createSink<Joy>(node_.get(), topicInfo("k11/joy"), kWindow);
     auto pub = node_->create_publisher<Joy>("k11/joy", 10);
 
     std::atomic<int> got{0};
-    sink->setMsgCallback([&](const Joy&, const ControlSignalInfo&) {
-        got.fetch_add(1);
-    });
+    sink->setMsgCallback(
+        [&](const Joy&, const ControlSignalInfo&)
+        {
+            got.fetch_add(1);
+        });
     for (int i = 0; i < 40; ++i)
     {
         pub->publish(makeJoy(1.f));
@@ -785,7 +802,7 @@ TEST_F(SinkTest, K11_DataRate)
     }
     for (int i = 0; i < 100 && got.load() < 40; ++i)
         std::this_thread::sleep_for(10ms);
-    ASSERT_GE(got.load(), 38);   // allow minimal transport slack
+    ASSERT_GE(got.load(), 38);  // allow minimal transport slack
 
     const int64_t now = steadyNowNs();
     const auto d = ManagerTestAccess::calc(*sink, now);
@@ -806,17 +823,21 @@ TEST_F(SinkTest, K12_RateConcurrency)
     auto pub = node_->create_publisher<Joy>("k12/joy", 10);
     std::atomic<bool> stop{false};
 
-    std::thread flooder([&] {
-        while (!stop.load())
+    std::thread flooder(
+        [&]
         {
-            pub->publish(makeJoy(1.f));
-            std::this_thread::sleep_for(1ms);
-        }
-    });
-    std::thread reader([&] {
-        while (!stop.load())
-            (void)sink->dataRateHz();
-    });
+            while (!stop.load())
+            {
+                pub->publish(makeJoy(1.f));
+                std::this_thread::sleep_for(1ms);
+            }
+        });
+    std::thread reader(
+        [&]
+        {
+            while (!stop.load())
+                (void)sink->dataRateHz();
+        });
     for (int i = 0; i < 50; ++i)
     {
         ManagerTestAccess::apply(*sink, ManagerTestAccess::calc(*sink, steadyNowNs()));
@@ -836,9 +857,11 @@ TEST_F(SinkTest, K13_WaitForMessage)
     auto pub = node_->create_publisher<Joy>("k13/joy", 10);
 
     Joy out;
-    std::thread waiter([&] {
-        EXPECT_TRUE(sink->waitForMessage(out, 3'000 * kMs));
-    });
+    std::thread waiter(
+        [&]
+        {
+            EXPECT_TRUE(sink->waitForMessage(out, 3'000 * kMs));
+        });
     std::this_thread::sleep_for(100ms);
     const auto tPub = std::chrono::steady_clock::now();
     pub->publish(makeJoy(5.f));
@@ -865,19 +888,21 @@ TEST_F(SinkTest, K14_OnlyNewMessagesWake)
 {
     auto sink = ManagerTestAccess::createSink<Joy>(node_.get(), topicInfo("k14/joy"));
     auto pub = node_->create_publisher<Joy>("k14/joy", 10);
-    publishAndWait(pub, sink, 1.f);   // old message stored
+    publishAndWait(pub, sink, 1.f);  // old message stored
 
     Joy out;
-    EXPECT_FALSE(sink->waitForMessage(out, 300 * kMs));   // old one must not trigger
+    EXPECT_FALSE(sink->waitForMessage(out, 300 * kMs));  // old one must not trigger
 
     std::atomic<int> woke{0};
     std::vector<std::thread> waiters;
     for (int i = 0; i < 3; ++i)
-        waiters.emplace_back([&] {
-            Joy o;
-            if (sink->waitForMessage(o, 3'000 * kMs))
-                woke.fetch_add(1);
-        });
+        waiters.emplace_back(
+            [&]
+            {
+                Joy o;
+                if (sink->waitForMessage(o, 3'000 * kMs))
+                    woke.fetch_add(1);
+            });
     std::this_thread::sleep_for(150ms);
     const auto tPub = std::chrono::steady_clock::now();
     pub->publish(makeJoy(2.f));
@@ -885,7 +910,7 @@ TEST_F(SinkTest, K14_OnlyNewMessagesWake)
         w.join();
     // All woken by the notify itself, far below the 3 s timeout expiry.
     EXPECT_LE(std::chrono::steady_clock::now() - tPub, 1s);
-    EXPECT_EQ(woke.load(), 3);   // all waiters woken by the single new message
+    EXPECT_EQ(woke.load(), 3);  // all waiters woken by the single new message
 }
 
 // K15: waitForMessage + shutdown — waiters return false immediately; no
@@ -894,20 +919,22 @@ TEST_F(SinkTest, K14_OnlyNewMessagesWake)
 TEST_F(SinkTest, K15_WaitInterruptedByShutdown)
 {
     auto sink = ManagerTestAccess::createSink<Joy>(node_.get(), topicInfo("k15/joy"));
-    auto* raw = sink.get();   // the waiter must not keep the sink alive
+    auto* raw = sink.get();  // the waiter must not keep the sink alive
 
     std::atomic<bool> returned{false};
-    std::thread waiter([&] {
-        Joy out;
-        EXPECT_FALSE(raw->waitForMessage(out, 0));   // infinite wait
-        returned.store(true);
-    });
+    std::thread waiter(
+        [&]
+        {
+            Joy out;
+            EXPECT_FALSE(raw->waitForMessage(out, 0));  // infinite wait
+            returned.store(true);
+        });
     std::this_thread::sleep_for(100ms);
     EXPECT_FALSE(returned.load());
     const auto t0 = std::chrono::steady_clock::now();
-    sink.reset();   // ~ControlSignalSink: shutdown-wake + drain waiters_
+    sink.reset();  // ~ControlSignalSink: shutdown-wake + drain waiters_
     waiter.join();
-    EXPECT_LE(std::chrono::steady_clock::now() - t0, 1s);   // immediate return
+    EXPECT_LE(std::chrono::steady_clock::now() - t0, 1s);  // immediate return
     EXPECT_TRUE(returned.load());
 }
 
@@ -932,20 +959,24 @@ TEST_F(SinkTest, K16_SealVsReceiveInterleave)
     ASSERT_TRUE(ManagerTestAccess::trySealLocalTerminal(*sink2, d));
 
     std::atomic<int> fires{0};
-    sink2->setMsgCallback([&](const Joy&, const ControlSignalInfo&) {
-        fires.fetch_add(1);
-    });
-    std::thread waiter([&] {
-        Joy o;
-        EXPECT_FALSE(sink2->waitForMessage(o, 400 * kMs));   // never woken
-    });
+    sink2->setMsgCallback(
+        [&](const Joy&, const ControlSignalInfo&)
+        {
+            fires.fetch_add(1);
+        });
+    std::thread waiter(
+        [&]
+        {
+            Joy o;
+            EXPECT_FALSE(sink2->waitForMessage(o, 400 * kMs));  // never woken
+        });
     std::this_thread::sleep_for(50ms);
     pub2->publish(makeJoy(9.f));
     waiter.join();
     EXPECT_EQ(fires.load(), 0);
 }
 
-} // namespace
+}  // namespace
 
 int main(int argc, char** argv)
 {

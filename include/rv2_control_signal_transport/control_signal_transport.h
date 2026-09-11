@@ -45,10 +45,8 @@
 // bound only in control_signal_types.cpp via ControlSignalFactory.
 #include <std_msgs/msg/string.hpp>
 
-
 namespace rv2_interfaces
 {
-
 
 /**
  * @brief Runtime state of a ControlSignalSource or ControlSignalSink.
@@ -58,14 +56,12 @@ namespace rv2_interfaces
  */
 enum class ControlSignalState
 {
-    UNKNOWN,      ///< No message received yet (initial state).
-    ACTIVE,       ///< Receiving messages within expected rate.
-    LOW_FREQ,     ///< Receiving messages but below expected rate (usable, lower priority).
-    TIMEOUT,      ///< Was ACTIVE/LOW_FREQ but elapsed since last message > timeout threshold.
+    UNKNOWN,  ///< No message received yet (initial state).
+    ACTIVE,  ///< Receiving messages within expected rate.
+    LOW_FREQ,  ///< Receiving messages but below expected rate (usable, lower priority).
+    TIMEOUT,  ///< Was ACTIVE/LOW_FREQ but elapsed since last message > timeout threshold.
     DISCONNECTED  ///< Terminal: removed by CSM after prolonged TIMEOUT.
 };
-
-
 
 /**
  * @brief BaseControlSignalSource is an abstract base class representing a source of control signals.
@@ -127,8 +123,6 @@ public:
     virtual void markDisconnected() = 0;
 };
 
-
-
 /**
  * @brief BaseControlSignalSink is an abstract base class representing a sink of control signals.
  *
@@ -143,8 +137,7 @@ public:
      * The first argument points to the concrete msgT instance that was received
      * (matching msgType()); the second is the Sink's ControlSignalInfo.
      */
-    using ErasedMsgCb =
-        std::function<void(const void* /*msg*/, const msg::ControlSignalInfo&)>;
+    using ErasedMsgCb = std::function<void(const void* /*msg*/, const msg::ControlSignalInfo&)>;
 
     BaseControlSignalSink() = default;
     virtual ~BaseControlSignalSink() = default;
@@ -200,8 +193,6 @@ public:
     virtual void markDisconnected() = 0;
 };
 
-
-
 // ============================================================
 //  Internal helper
 // ============================================================
@@ -211,25 +202,32 @@ namespace detail
 /// Returns steady-clock time as nanoseconds since epoch (lock-free, no allocation).
 inline int64_t steadyNs() noexcept
 {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
 }
 
 /// Lazy trait: maps srvT → rclcpp::Client<srvT>::SharedPtr, or std::monostate when srvT=void.
 /// Avoids instantiating rclcpp::Client<void> (which is ill-formed).
-template<typename T>
-struct ClientPtrOf { using type = typename rclcpp::Client<T>::SharedPtr; };
-template<>
-struct ClientPtrOf<void> { using type = std::monostate; };
+template <typename T> struct ClientPtrOf
+{
+    using type = typename rclcpp::Client<T>::SharedPtr;
+};
+template <> struct ClientPtrOf<void>
+{
+    using type = std::monostate;
+};
 
 /// Lazy trait: maps srvT → rclcpp::Service<srvT>::SharedPtr, or std::monostate when srvT=void.
-template<typename T>
-struct ServicePtrOf { using type = typename rclcpp::Service<T>::SharedPtr; };
-template<>
-struct ServicePtrOf<void> { using type = std::monostate; };
+template <typename T> struct ServicePtrOf
+{
+    using type = typename rclcpp::Service<T>::SharedPtr;
+};
+template <> struct ServicePtrOf<void>
+{
+    using type = std::monostate;
+};
 
-} // namespace detail
-
+}  // namespace detail
 
 // ============================================================
 //  ControlSignalSource
@@ -268,13 +266,12 @@ struct ServicePtrOf<void> { using type = std::monostate; };
  *               msgT; Response must have a `success` bool field.
  *               Defaults to void (topic-only).
  */
-template<typename msgT, typename srvT = void>
-class ControlSignalSource : public BaseControlSignalSource
+template <typename msgT, typename srvT = void> class ControlSignalSource : public BaseControlSignalSource
 {
 private:
-    rclcpp::Node*          node_;
+    rclcpp::Node* node_;
     msg::ControlSignalInfo info_;
-    bool                   isTopicMode_;    // cached at construction
+    bool isTopicMode_;  // cached at construction
 
     using PubPtr = typename rclcpp::Publisher<msgT>::SharedPtr;
     using CliPtr = typename detail::ClientPtrOf<srvT>::type;
@@ -285,7 +282,7 @@ private:
 
     // isTopicMode_ declared before state_ so the initializer list can use it safely.
     mutable std::atomic<ControlSignalState> state_;
-    mutable std::atomic<int64_t>            lastActivityNs_;
+    mutable std::atomic<int64_t> lastActivityNs_;
 
     // Passive timeout — modifies mutable atomics; safe to call from const context.
     void _checkTimeout() const
@@ -331,9 +328,13 @@ private:
         // Keep-alive subscriber: works in both topic and service modes.
         if (info_.use_keep_alive && info_.keep_alive_interval_ns > 0)
         {
-            keepAliveSub_ = node_->create_subscription<std_msgs::msg::String>(
-                info_.channel_name + "_keep_alive", rclcpp::QoS(10),
-                [this](const std::shared_ptr<std_msgs::msg::String>) { _markActivity(); });
+            keepAliveSub_ =
+                node_->create_subscription<std_msgs::msg::String>(info_.channel_name + "_keep_alive",
+                                                                  rclcpp::QoS(10),
+                                                                  [this](const std::shared_ptr<std_msgs::msg::String>)
+                                                                  {
+                                                                      _markActivity();
+                                                                  });
         }
     }
 
@@ -349,15 +350,14 @@ public:
      * @param node  Parent ROS 2 node (must outlive this object).
      * @param info  Control signal descriptor.
      */
-    ControlSignalSource(rclcpp::Node* node, const msg::ControlSignalInfo& info)
-        : node_(node)
-        , info_(info)
-        , isTopicMode_(std::is_void_v<srvT> ||
-                       info.control_signal_mode ==
-                           msg::ControlSignalConst::CONTROL_SIGNAL_MODE_TOPIC)
-        , transport_(PubPtr{})
-        , state_(ControlSignalState::UNKNOWN)
-        , lastActivityNs_(detail::steadyNs())
+    ControlSignalSource(rclcpp::Node* node, const msg::ControlSignalInfo& info) :
+        node_(node),
+        info_(info),
+        isTopicMode_(std::is_void_v<srvT> ||
+                     info.control_signal_mode == msg::ControlSignalConst::CONTROL_SIGNAL_MODE_TOPIC),
+        transport_(PubPtr{}),
+        state_(ControlSignalState::UNKNOWN),
+        lastActivityNs_(detail::steadyNs())
     {
         _initTransport();
     }
@@ -377,40 +377,45 @@ public:
      */
     bool send(const msgT& msg, bool& cmdSuccess)
     {
-        return std::visit([&](auto& t) -> bool
-        {
-            using T = std::decay_t<decltype(t)>;
-            if constexpr (std::is_same_v<T, PubPtr>)
+        return std::visit(
+            [&](auto& t) -> bool
             {
-                if (!t) return false;
-                t->publish(msg);
-                cmdSuccess = true;
-                return true;
-            }
-            else if constexpr (!std::is_same_v<T, std::monostate>)
-            {
-                if (!t || !t->service_is_ready()) return false;
-                auto req  = std::make_shared<typename srvT::Request>();
-                req->data = msg;
-                auto result = t->async_send_request(req);
-                auto future = result.wait_for(std::chrono::nanoseconds(info_.timeout_ns > 0 ? info_.timeout_ns : 50'000'000LL)); // 50 ms default fallback
-                if (future == std::future_status::ready)
+                using T = std::decay_t<decltype(t)>;
+                if constexpr (std::is_same_v<T, PubPtr>)
                 {
-                    auto res = result.get();
-                    _markActivity();
-                    cmdSuccess = res->response < rv2_interfaces::msg::ServiceResponseStatusConst::SRV_RES_WARNING;
+                    if (!t)
+                        return false;
+                    t->publish(msg);
+                    cmdSuccess = true;
                     return true;
                 }
-                else
+                else if constexpr (!std::is_same_v<T, std::monostate>)
                 {
-                    // Timeout waiting for response → mark timeout but don't block the caller.
-                    state_.store(ControlSignalState::TIMEOUT, std::memory_order_relaxed);
-                    cmdSuccess = false;
-                    return false;
+                    if (!t || !t->service_is_ready())
+                        return false;
+                    auto req = std::make_shared<typename srvT::Request>();
+                    req->data = msg;
+                    auto result = t->async_send_request(req);
+                    auto future = result.wait_for(std::chrono::nanoseconds(
+                        info_.timeout_ns > 0 ? info_.timeout_ns : 50'000'000LL));  // 50 ms default fallback
+                    if (future == std::future_status::ready)
+                    {
+                        auto res = result.get();
+                        _markActivity();
+                        cmdSuccess = res->response < rv2_interfaces::msg::ServiceResponseStatusConst::SRV_RES_WARNING;
+                        return true;
+                    }
+                    else
+                    {
+                        // Timeout waiting for response → mark timeout but don't block the caller.
+                        state_.store(ControlSignalState::TIMEOUT, std::memory_order_relaxed);
+                        cmdSuccess = false;
+                        return false;
+                    }
                 }
-            }
-            return false;
-        }, transport_);
+                return false;
+            },
+            transport_);
     }
 
     /** @brief Returns the current state with a passive timeout check. */
@@ -420,10 +425,7 @@ public:
         return state_.load(std::memory_order_relaxed);
     }
 
-    void markDisconnected() override
-    {
-        state_.store(ControlSignalState::DISCONNECTED, std::memory_order_relaxed);
-    }
+    void markDisconnected() override { state_.store(ControlSignalState::DISCONNECTED, std::memory_order_relaxed); }
 
     const msg::ControlSignalInfo& getInfo() const override { return info_; }
 
@@ -434,7 +436,6 @@ public:
         return send(*static_cast<const msgT*>(msg), cmdSuccess);
     }
 };
-
 
 // ============================================================
 //  ControlSignalSink
@@ -464,8 +465,7 @@ public:
  *               msgT; Response must have a `success` bool field.
  *               Defaults to void (topic-only).
  */
-template<typename msgT, typename srvT = void>
-class ControlSignalSink : public BaseControlSignalSink
+template <typename msgT, typename srvT = void> class ControlSignalSink : public BaseControlSignalSink
 {
 public:
     /**
@@ -477,7 +477,7 @@ public:
     using MsgCb = std::function<void(const msgT&, const msg::ControlSignalInfo&)>;
 
 private:
-    rclcpp::Node*          node_;
+    rclcpp::Node* node_;
     msg::ControlSignalInfo info_;
 
     using SubPtr = typename rclcpp::Subscription<msgT>::SharedPtr;
@@ -486,16 +486,16 @@ private:
 
     // Keep-alive publisher + periodic timer.
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr keepAlivePub_;
-    rclcpp::TimerBase::SharedPtr                        keepAliveTimer_;
+    rclcpp::TimerBase::SharedPtr keepAliveTimer_;
 
-    mutable std::mutex   msgMtx_;   // guards latestMsg_ only
-    std::optional<msgT>  latestMsg_;
+    mutable std::mutex msgMtx_;  // guards latestMsg_ only
+    std::optional<msgT> latestMsg_;
 
-    mutable std::mutex cbMtx_;      // guards msgCb_
-    MsgCb              msgCb_;
+    mutable std::mutex cbMtx_;  // guards msgCb_
+    MsgCb msgCb_;
 
     mutable std::atomic<ControlSignalState> state_;
-    mutable std::atomic<int64_t>            lastActivityNs_;
+    mutable std::atomic<int64_t> lastActivityNs_;
 
     // Passive timeout — modifies mutable atomics; safe to call from const context.
     void _checkTimeout() const
@@ -505,13 +505,10 @@ private:
         if (cur == ControlSignalState::DISCONNECTED)
             return;
 
-        if (info_.timeout_ns > 0 &&
-            (cur == ControlSignalState::UNKNOWN  ||
-             cur == ControlSignalState::ACTIVE   ||
-             cur == ControlSignalState::LOW_FREQ))
+        if (info_.timeout_ns > 0 && (cur == ControlSignalState::UNKNOWN || cur == ControlSignalState::ACTIVE ||
+                                     cur == ControlSignalState::LOW_FREQ))
         {
-            const int64_t elapsed = detail::steadyNs() -
-                                    lastActivityNs_.load(std::memory_order_relaxed);
+            const int64_t elapsed = detail::steadyNs() - lastActivityNs_.load(std::memory_order_relaxed);
             if (elapsed > info_.timeout_ns)
                 state_.store(ControlSignalState::TIMEOUT, std::memory_order_relaxed);
             else if (cur != ControlSignalState::UNKNOWN && elapsed > info_.timeout_ns / 2)
@@ -536,7 +533,8 @@ private:
             std::lock_guard<std::mutex> lk(cbMtx_);
             cb = msgCb_;
         }
-        if (cb) cb(msg, info_);
+        if (cb)
+            cb(msg, info_);
     }
 
     // Fired every keep_alive_interval_ns by the wall timer.
@@ -550,23 +548,26 @@ private:
     {
         if (info_.use_keep_alive && info_.keep_alive_interval_ns > 0)
         {
-            keepAlivePub_ = node_->create_publisher<std_msgs::msg::String>(
-                info_.channel_name + "_keep_alive", rclcpp::QoS(10));
-            keepAliveTimer_ = node_->create_wall_timer(
-                std::chrono::nanoseconds(info_.keep_alive_interval_ns),
-                [this]() { _keepAliveTimerCb(); });
+            keepAlivePub_ =
+                node_->create_publisher<std_msgs::msg::String>(info_.channel_name + "_keep_alive", rclcpp::QoS(10));
+            keepAliveTimer_ = node_->create_wall_timer(std::chrono::nanoseconds(info_.keep_alive_interval_ns),
+                                                       [this]()
+                                                       {
+                                                           _keepAliveTimerCb();
+                                                       });
         }
 
         const bool useTopic =
-            std::is_void_v<srvT> ||
-            (info_.control_signal_mode ==
-                 msg::ControlSignalConst::CONTROL_SIGNAL_MODE_TOPIC);
+            std::is_void_v<srvT> || (info_.control_signal_mode == msg::ControlSignalConst::CONTROL_SIGNAL_MODE_TOPIC);
 
         if (useTopic)
         {
-            transport_ = node_->create_subscription<msgT>(
-                info_.channel_name, rclcpp::QoS(10),
-                [this](const std::shared_ptr<msgT> msg) { _store(*msg); });
+            transport_ = node_->create_subscription<msgT>(info_.channel_name,
+                                                          rclcpp::QoS(10),
+                                                          [this](const std::shared_ptr<msgT> msg)
+                                                          {
+                                                              _store(*msg);
+                                                          });
         }
         else
         {
@@ -574,8 +575,9 @@ private:
             {
                 transport_ = node_->create_service<srvT>(
                     info_.channel_name,
-                    [this](const std::shared_ptr<typename srvT::Request>  req,
-                                 std::shared_ptr<typename srvT::Response> res) {
+                    [this](const std::shared_ptr<typename srvT::Request> req,
+                           std::shared_ptr<typename srvT::Response> res)
+                    {
                         _store(req->data);
                         res->response = rv2_interfaces::msg::ServiceResponseStatusConst::SRV_RES_SUCCESS;
                     });
@@ -590,12 +592,12 @@ public:
      * @param node  Parent ROS 2 node (must outlive this object).
      * @param info  Control signal descriptor.
      */
-    ControlSignalSink(rclcpp::Node* node, const msg::ControlSignalInfo& info)
-        : node_(node)
-        , info_(info)
-        , transport_(SubPtr{})
-        , state_(ControlSignalState::UNKNOWN)
-        , lastActivityNs_(detail::steadyNs())
+    ControlSignalSink(rclcpp::Node* node, const msg::ControlSignalInfo& info) :
+        node_(node),
+        info_(info),
+        transport_(SubPtr{}),
+        state_(ControlSignalState::UNKNOWN),
+        lastActivityNs_(detail::steadyNs())
     {
         _initTransport();
     }
@@ -636,19 +638,13 @@ public:
         return state_.load(std::memory_order_relaxed);
     }
 
-    void markDisconnected() override
-    {
-        state_.store(ControlSignalState::DISCONNECTED, std::memory_order_relaxed);
-    }
+    void markDisconnected() override { state_.store(ControlSignalState::DISCONNECTED, std::memory_order_relaxed); }
 
     const msg::ControlSignalInfo& getInfo() const override { return info_; }
 
     std::type_index msgType() const override { return std::type_index(typeid(msgT)); }
 
-    bool readErased(void* outMsg) const override
-    {
-        return read(*static_cast<msgT*>(outMsg));
-    }
+    bool readErased(void* outMsg) const override { return read(*static_cast<msgT*>(outMsg)); }
 
     void setErasedMsgCallback(ErasedMsgCb cb) override
     {
@@ -656,7 +652,9 @@ public:
         {
             setMsgCallback(
                 [cb](const msgT& m, const msg::ControlSignalInfo& i)
-                { cb(static_cast<const void*>(&m), i); });
+                {
+                    cb(static_cast<const void*>(&m), i);
+                });
         }
         else
         {
@@ -665,5 +663,4 @@ public:
     }
 };
 
-
-} // namespace rv2_interfaces
+}  // namespace rv2_interfaces

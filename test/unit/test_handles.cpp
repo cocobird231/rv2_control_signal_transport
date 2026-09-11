@@ -12,7 +12,10 @@ namespace
 class HandlesTest : public HandleTestBase
 {
 public:
-    HandlesTest() : HandleTestBase("h") {}
+    HandlesTest() :
+        HandleTestBase("h")
+    {
+    }
 };
 
 // H1: empty handles — everything is inert.
@@ -44,26 +47,32 @@ TEST_F(HandlesTest, H2_NormalHandles)
     EXPECT_TRUE(r.handle.valid());
     EXPECT_TRUE(r.handle.ready());
     EXPECT_EQ(r.handle.controllerName(), i.controller_name);
-    ASSERT_TRUE(waitFor([&] {
-        return mgrB_->getSinkState(i.controller_name).has_value();
-    }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return mgrB_->getSinkState(i.controller_name).has_value();
+        }));
 
     SinkHandle sink = mgrB_->getSink(i.controller_name);
     ASSERT_TRUE(sink.valid());
 
     Joy out;
-    std::thread waiter([&] {
-        SinkHandle s2 = sink;   // copies forward too
-        Joy tmp;
-        EXPECT_TRUE(s2.waitForMessage(tmp, 3'000 * kMs));
-    });
+    std::thread waiter(
+        [&]
+        {
+            SinkHandle s2 = sink;  // copies forward too
+            Joy tmp;
+            EXPECT_TRUE(s2.waitForMessage(tmp, 3'000 * kMs));
+        });
     std::this_thread::sleep_for(100ms);
     EXPECT_EQ(r.handle.send(makeJoy(4.f)), SendResult::OK);
     waiter.join();
 
-    ASSERT_TRUE(waitFor([&] {
-        return sink.state() == ControlSignalState::ACTIVE;
-    }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return sink.state() == ControlSignalState::ACTIVE;
+        }));
     ASSERT_TRUE(sink.read(out));
     ASSERT_EQ(out.axes.size(), 1u);
     EXPECT_FLOAT_EQ(out.axes[0], 4.f);
@@ -93,9 +102,11 @@ TEST_F(HandlesTest, H4_InvalidAfterRemoval)
     const auto i = info("h4");
     auto r = mgrA_->registerSource(i);
     ASSERT_EQ(r.code, RegisterError::OK);
-    ASSERT_TRUE(waitFor([&] {
-        return mgrB_->getSinkState(i.controller_name).has_value();
-    }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return mgrB_->getSinkState(i.controller_name).has_value();
+        }));
     SinkHandle sink = mgrB_->getSink(i.controller_name);
     ASSERT_TRUE(sink.valid());
 
@@ -107,7 +118,11 @@ TEST_F(HandlesTest, H4_InvalidAfterRemoval)
     EXPECT_EQ(r.handle.send(makeJoy(1.f)), SendResult::DISCONNECTED);
 
     // The remote sink follows via the matching UNREGISTER.
-    ASSERT_TRUE(waitFor([&] { return !sink.valid(); }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return !sink.valid();
+        }));
     Joy out;
     EXPECT_FALSE(sink.read(out));
     EXPECT_EQ(sink.state(), std::nullopt);
@@ -125,7 +140,7 @@ TEST_F(HandlesTest, H5_CopiesShareInvalidation)
     EXPECT_TRUE(copy1.valid());
     EXPECT_TRUE(copy2.ready());
 
-    ASSERT_TRUE(mgrA_->unregisterSource(copy1));   // unregister via a copy
+    ASSERT_TRUE(mgrA_->unregisterSource(copy1));  // unregister via a copy
     EXPECT_FALSE(r.handle.valid());
     EXPECT_FALSE(copy1.valid());
     EXPECT_FALSE(copy2.valid());
@@ -143,16 +158,18 @@ TEST_F(HandlesTest, H6_ConcurrentOpsVsRemoval)
         ASSERT_EQ(r.code, RegisterError::OK);
 
         std::atomic<bool> stop{false};
-        std::thread hammer([&] {
-            Joy out;
-            while (!stop.load())
+        std::thread hammer(
+            [&]
             {
-                (void)r.handle.send(makeJoy(1.f));
-                (void)r.handle.ready();
-                (void)r.handle.state();
-                (void)r.handle.info();
-            }
-        });
+                Joy out;
+                while (!stop.load())
+                {
+                    (void)r.handle.send(makeJoy(1.f));
+                    (void)r.handle.ready();
+                    (void)r.handle.state();
+                    (void)r.handle.info();
+                }
+            });
         std::this_thread::sleep_for(50ms);
         ASSERT_TRUE(mgrA_->unregisterSource(r.handle));
         std::this_thread::sleep_for(50ms);
@@ -162,8 +179,7 @@ TEST_F(HandlesTest, H6_ConcurrentOpsVsRemoval)
     }
 }
 
-
-} // namespace
+}  // namespace
 
 int main(int argc, char** argv)
 {

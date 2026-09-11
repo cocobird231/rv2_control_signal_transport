@@ -12,7 +12,10 @@ namespace
 class HandlesTest : public HandleTestBase
 {
 public:
-    HandlesTest() : HandleTestBase("hl") {}
+    HandlesTest() :
+        HandleTestBase("hl")
+    {
+    }
 };
 
 // H7: peer failure -> RETRY_WAIT -> success. Same SourceHandle: valid stays
@@ -28,15 +31,19 @@ TEST_F(HandlesTest, H7_RetryKeepsHandle)
     // Capture identity from A's status snapshot for the lifecycle command.
     std::mutex mtx;
     std::optional<ManagerStatusT> st;
-    auto sub = auxNode_->create_subscription<ManagerStatusT>(
-        nameA() + "/status", 10, [&](const ManagerStatusT& m) {
+    auto sub = auxNode_->create_subscription<ManagerStatusT>(nameA() + "/status",
+                                                             10,
+                                                             [&](const ManagerStatusT& m)
+                                                             {
+                                                                 std::lock_guard<std::mutex> lk(mtx);
+                                                                 st = m;
+                                                             });
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
             std::lock_guard<std::mutex> lk(mtx);
-            st = m;
-        });
-    ASSERT_TRUE(waitFor([&] {
-        std::lock_guard<std::mutex> lk(mtx);
-        return st && !st->sources.empty();
-    }));
+            return st && !st->sources.empty();
+        }));
 
     auto client = auxNode_->create_client<CsmNotifySrv>(nameA() + "/get_notifications");
     ASSERT_TRUE(client->wait_for_service(3s));
@@ -53,15 +60,24 @@ TEST_F(HandlesTest, H7_RetryKeepsHandle)
     ASSERT_EQ(f.get()->response, CsmNotifySrv::Response::RESPONSE_APPLIED);
 
     // Phase 2: endpoint gone, intent alive.
-    ASSERT_TRUE(waitFor([&] { return !r.handle.ready(); }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return !r.handle.ready();
+        }));
     EXPECT_TRUE(r.handle.valid());
-    EXPECT_EQ(r.handle.state(), std::nullopt);      // no endpoint -> nullopt
-    EXPECT_TRUE(r.handle.info().has_value());       // intent still readable
+    EXPECT_EQ(r.handle.state(), std::nullopt);  // no endpoint -> nullopt
+    EXPECT_TRUE(r.handle.info().has_value());  // intent still readable
     EXPECT_EQ(r.handle.send(makeJoy(1.f)), SendResult::RETRYING);
 
     // Phase 3: retry succeeds (terminal path cleared B's old sink), the SAME
     // handle turns ready and sends through the replaced endpoint.
-    ASSERT_TRUE(waitFor([&] { return r.handle.ready(); }, 10000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return r.handle.ready();
+        },
+        10000));
     EXPECT_TRUE(r.handle.valid());
     EXPECT_EQ(r.handle.send(makeJoy(2.f)), SendResult::OK);
 }
@@ -84,9 +100,7 @@ TEST_F(HandlesTest, H8_UnregisterDuringRetryWait)
     EXPECT_EQ(r.handle.send(makeJoy(1.f)), SendResult::DISCONNECTED);
 
     // The target shows up afterwards: nothing may revive the dead intent.
-    auto late = std::make_unique<ControlSignalManager>(auxNode_.get(),
-                                                       "late8_" + uid_,
-                                                       makeOptions());
+    auto late = std::make_unique<ControlSignalManager>(auxNode_.get(), "late8_" + uid_, makeOptions());
     std::this_thread::sleep_for(800ms);
     EXPECT_FALSE(r.handle.valid());
     EXPECT_TRUE(mgrA_->getSourceInfoList().empty());
@@ -98,8 +112,8 @@ TEST_F(HandlesTest, H8_UnregisterDuringRetryWait)
     using ManageSrv = r1_interfaces::srv::ControlSignalManage;
     auto slow = auxNode_->create_service<ManageSrv>(
         "slowh8_" + uid_ + "/control_signal_manage",
-        [](const std::shared_ptr<ManageSrv::Request> rq,
-           std::shared_ptr<ManageSrv::Response> rs) {
+        [](const std::shared_ptr<ManageSrv::Request> rq, std::shared_ptr<ManageSrv::Response> rs)
+        {
             if (rq->op == ManageSrv::Request::OP_REGISTER)
                 std::this_thread::sleep_for(400ms);
             rs->response = ManageSrv::Response::RESPONSE_SUCCESS;
@@ -107,24 +121,28 @@ TEST_F(HandlesTest, H8_UnregisterDuringRetryWait)
     ControlSignalInfo i2 = info("h8b");
     i2.target_manager_name = "slowh8_" + uid_;
     std::atomic<RegisterError> code{RegisterError::OK};
-    std::thread reg([&] {
-        code.store(mgrA_->registerSource(i2, 2000).code);
-    });
-    ASSERT_TRUE(waitFor([&] {
-        return mgrA_->getSource(i2.controller_name).valid();
-    }));
+    std::thread reg(
+        [&]
+        {
+            code.store(mgrA_->registerSource(i2, 2000).code);
+        });
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return mgrA_->getSource(i2.controller_name).valid();
+        }));
     SourceHandle pending = mgrA_->getSource(i2.controller_name);
-    ASSERT_TRUE(mgrA_->unregisterSource(pending));   // while in flight
+    ASSERT_TRUE(mgrA_->unregisterSource(pending));  // while in flight
     reg.join();
     EXPECT_EQ(code.load(), RegisterError::TIMEOUT_UNKNOWN);
     EXPECT_FALSE(pending.valid());
-    std::this_thread::sleep_for(600ms);   // let the late response fully land
-    EXPECT_FALSE(pending.valid());        // no revival
+    std::this_thread::sleep_for(600ms);  // let the late response fully land
+    EXPECT_FALSE(pending.valid());  // no revival
     EXPECT_TRUE(mgrA_->getSourceInfoList().empty());
     EXPECT_FALSE(mgrA_->getSource(i2.controller_name).valid());
 }
 
-} // namespace
+}  // namespace
 
 int main(int argc, char** argv)
 {

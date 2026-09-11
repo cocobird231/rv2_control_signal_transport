@@ -22,4 +22,4 @@ ControlSignalFactory& ControlSignalFactory::Instance()
     return instance;
 }
 
-} // namespace rv2_interfaces
+}  // namespace rv2_interfaces

@@ -22,13 +22,19 @@ namespace rv2_interfaces
 namespace r1
 {
 
-enum class ControlSignalState : uint8_t { INITIAL, ACTIVE, TIMEOUT, DISCONNECTED };
+enum class ControlSignalState : uint8_t
+{
+    INITIAL,
+    ACTIVE,
+    TIMEOUT,
+    DISCONNECTED
+};
 
 struct ActivitySnapshot
 {
-    int64_t  lastActivityNs;
+    int64_t lastActivityNs;
     uint64_t generation;
-    bool     sealed;
+    bool sealed;
 };
 
 struct LivenessDecision
@@ -40,12 +46,13 @@ struct LivenessDecision
 class LivenessState
 {
 public:
-    explicit LivenessState(int64_t nowNs)
-        : createdNs_(nowNs)
-        , lastActivityNs_(nowNs)
-        , activityWord_(0)
-        , state_(ControlSignalState::INITIAL)
-    {}
+    explicit LivenessState(int64_t nowNs) :
+        createdNs_(nowNs),
+        lastActivityNs_(nowNs),
+        activityWord_(0),
+        state_(ControlSignalState::INITIAL)
+    {
+    }
 
     LivenessState(const LivenessState&) = delete;
     LivenessState& operator=(const LivenessState&) = delete;
@@ -59,20 +66,18 @@ public:
     bool recordActivity(int64_t nowNs)
     {
         int64_t prev = lastActivityNs_.load(std::memory_order_relaxed);
-        while (nowNs > prev &&
-               !lastActivityNs_.compare_exchange_weak(
-                   prev, nowNs,
-                   std::memory_order_release, std::memory_order_relaxed))
-        {}
+        while (nowNs > prev && !lastActivityNs_.compare_exchange_weak(
+                                   prev, nowNs, std::memory_order_release, std::memory_order_relaxed))
+        {
+        }
 
         uint64_t word = activityWord_.load(std::memory_order_relaxed);
         do
         {
             if (word & kSealed)
                 return false;
-        } while (!activityWord_.compare_exchange_weak(
-                     word, word + 1,
-                     std::memory_order_release, std::memory_order_relaxed));
+        } while (
+            !activityWord_.compare_exchange_weak(word, word + 1, std::memory_order_release, std::memory_order_relaxed));
         return true;
     }
 
@@ -94,17 +99,14 @@ public:
         {
             const int64_t elapsed = nowNs - createdNs_;
             const bool dead = disconnectNs > 0 && elapsed > disconnectNs;
-            return {dead ? ControlSignalState::DISCONNECTED
-                         : ControlSignalState::INITIAL,
-                    generation};
+            return {dead ? ControlSignalState::DISCONNECTED : ControlSignalState::INITIAL, generation};
         }
 
-        const int64_t elapsed =
-            nowNs - lastActivityNs_.load(std::memory_order_relaxed);
+        const int64_t elapsed = nowNs - lastActivityNs_.load(std::memory_order_relaxed);
         ControlSignalState s = ControlSignalState::ACTIVE;
-        if (disconnectNs > 0 && elapsed > disconnectNs)        // strict >, disconnect first
+        if (disconnectNs > 0 && elapsed > disconnectNs)  // strict >, disconnect first
             s = ControlSignalState::DISCONNECTED;
-        else if (timeoutNs > 0 && elapsed > timeoutNs)          // strict >
+        else if (timeoutNs > 0 && elapsed > timeoutNs)  // strict >
             s = ControlSignalState::TIMEOUT;
         return {s, generation};
     }
@@ -117,52 +119,40 @@ public:
     /// CAS is the linearization point of "death confirmed".
     bool trySealActivity(uint64_t observedGeneration)
     {
-        uint64_t expected = observedGeneration;   // implies not sealed
+        uint64_t expected = observedGeneration;  // implies not sealed
         return activityWord_.compare_exchange_strong(
-            expected, observedGeneration | kSealed,
-            std::memory_order_acq_rel, std::memory_order_relaxed);
+            expected, observedGeneration | kSealed, std::memory_order_acq_rel, std::memory_order_relaxed);
     }
 
     /// Forced / matching remote lifecycle removal: unconditionally establishes
     /// the terminal seal. Idempotent.
-    void sealActivity()
-    {
-        activityWord_.fetch_or(kSealed, std::memory_order_acq_rel);
-    }
+    void sealActivity() { activityWord_.fetch_or(kSealed, std::memory_order_acq_rel); }
 
     /// CSM tick only: stores the state and returns the previous one (the
     /// caller fires the state callback on old != new). Unconditional exchange,
     /// no CAS — the single-writer model makes concurrent state writers
     /// structurally impossible (§4.2, D8).
-    ControlSignalState applyState(ControlSignalState s)
-    {
-        return state_.exchange(s, std::memory_order_acq_rel);
-    }
+    ControlSignalState applyState(ControlSignalState s) { return state_.exchange(s, std::memory_order_acq_rel); }
 
     /// Reads the last applied state; never triggers a computation.
-    ControlSignalState state() const
-    {
-        return state_.load(std::memory_order_acquire);
-    }
+    ControlSignalState state() const { return state_.load(std::memory_order_acquire); }
 
     ActivitySnapshot activitySnapshot() const
     {
         const uint64_t word = activityWord_.load(std::memory_order_acquire);
-        return {lastActivityNs_.load(std::memory_order_relaxed),
-                word & ~kSealed,
-                (word & kSealed) != 0};
+        return {lastActivityNs_.load(std::memory_order_relaxed), word & ~kSealed, (word & kSealed) != 0};
     }
 
 private:
     static constexpr uint64_t kSealed = uint64_t{1} << 63;
 
-    const int64_t                   createdNs_;      // construction time, read-only
-    std::atomic<int64_t>            lastActivityNs_; // atomic max, never regresses
-    std::atomic<uint64_t>           activityWord_;   // 1-bit sealed + 63-bit generation
-    std::atomic<ControlSignalState> state_;          // last applyState() result
+    const int64_t createdNs_;  // construction time, read-only
+    std::atomic<int64_t> lastActivityNs_;  // atomic max, never regresses
+    std::atomic<uint64_t> activityWord_;  // 1-bit sealed + 63-bit generation
+    std::atomic<ControlSignalState> state_;  // last applyState() result
 };
 
-} // namespace r1
-} // namespace rv2_interfaces
+}  // namespace r1
+}  // namespace rv2_interfaces
 
-#endif // RV2_CONTROL_SIGNAL_TRANSPORT_R1_LIVENESS_STATE_H
+#endif  // RV2_CONTROL_SIGNAL_TRANSPORT_R1_LIVENESS_STATE_H

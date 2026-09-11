@@ -23,33 +23,32 @@
 
 using namespace rv2_test;
 
-using rv2_interfaces::ControlSignalState;
-using rv2_interfaces::ControlSignalSource;
-using rv2_interfaces::ControlSignalSink;
-using rv2_interfaces::BaseControlSignalSource;
 using rv2_interfaces::BaseControlSignalSink;
+using rv2_interfaces::BaseControlSignalSource;
 using rv2_interfaces::ControlSignalFactory;
+using rv2_interfaces::ControlSignalSink;
+using rv2_interfaces::ControlSignalSource;
+using rv2_interfaces::ControlSignalState;
 
-using Joy   = sensor_msgs::msg::Joy;
+using Joy = sensor_msgs::msg::Joy;
 using Twist = geometry_msgs::msg::Twist;
-using Str   = std_msgs::msg::String;
-using ControlSignalJoy   = rv2_interfaces::srv::ControlSignalJoy;
+using Str = std_msgs::msg::String;
+using ControlSignalJoy = rv2_interfaces::srv::ControlSignalJoy;
 using ControlSignalTwist = rv2_interfaces::srv::ControlSignalTwist;
 using CSConst = rv2_interfaces::msg::ControlSignalConst;
 
-class TransportTest : public CsmTestBase {};
+class TransportTest : public CsmTestBase
+{
+};
 
 // ── T1: Source topic mode — always UNKNOWN initially ──────────────────────────
 TEST_F(TransportTest, SourceTopicInitialUnknown)
 {
     auto node = makeNode("tt_src_topic");
-    auto info = makeInfo("tt1/joy",
-                         CSConst::CONTROL_SIGNAL_TYPE_JOY,
-                         CSConst::CONTROL_SIGNAL_MODE_TOPIC);
+    auto info = makeInfo("tt1/joy", CSConst::CONTROL_SIGNAL_TYPE_JOY, CSConst::CONTROL_SIGNAL_MODE_TOPIC);
 
     ControlSignalSource<Joy> src(node.get(), info);
-    EXPECT_EQ(src.getState(), ControlSignalState::UNKNOWN)
-        << "got " << stateName(src.getState());
+    EXPECT_EQ(src.getState(), ControlSignalState::UNKNOWN) << "got " << stateName(src.getState());
 }
 
 // ── T2: Sink topic mode — UNKNOWN → ACTIVE on first message ───────────────────
@@ -57,12 +56,10 @@ TEST_F(TransportTest, SinkTopicActiveOnReceive)
 {
     auto nodeA = makeNode("tt_sink_a");
     auto nodeB = makeNode("tt_src_b");
-    auto info  = makeInfo("tt2/joy",
-                          CSConst::CONTROL_SIGNAL_TYPE_JOY,
-                          CSConst::CONTROL_SIGNAL_MODE_TOPIC);
+    auto info = makeInfo("tt2/joy", CSConst::CONTROL_SIGNAL_TYPE_JOY, CSConst::CONTROL_SIGNAL_MODE_TOPIC);
 
-    ControlSignalSink<Joy>   sink(nodeA.get(), info);
-    ControlSignalSource<Joy> src (nodeB.get(), info);
+    ControlSignalSink<Joy> sink(nodeA.get(), info);
+    ControlSignalSource<Joy> src(nodeB.get(), info);
 
     ASSERT_EQ(sink.getState(), ControlSignalState::UNKNOWN);
 
@@ -75,8 +72,7 @@ TEST_F(TransportTest, SinkTopicActiveOnReceive)
 
     rclcpp::sleep_for(200ms);  // delivery
 
-    EXPECT_EQ(sink.getState(), ControlSignalState::ACTIVE)
-        << "got " << stateName(sink.getState());
+    EXPECT_EQ(sink.getState(), ControlSignalState::ACTIVE) << "got " << stateName(sink.getState());
 
     Joy out;
     ASSERT_TRUE(sink.read(out));
@@ -89,13 +85,16 @@ TEST_F(TransportTest, SourceServiceModeActiveAfterSend)
 {
     auto nodeA = makeNode("tt_svc_sink_a");
     auto nodeB = makeNode("tt_svc_src_b");
-    auto info  = makeInfo("tt3/joy_svc",
-                          CSConst::CONTROL_SIGNAL_TYPE_JOY,
-                          CSConst::CONTROL_SIGNAL_MODE_SERVICE,
-                          "", false, 0, 500'000'000LL);
+    auto info = makeInfo("tt3/joy_svc",
+                         CSConst::CONTROL_SIGNAL_TYPE_JOY,
+                         CSConst::CONTROL_SIGNAL_MODE_SERVICE,
+                         "",
+                         false,
+                         0,
+                         500'000'000LL);
 
-    ControlSignalSink<Joy, ControlSignalJoy>   sink(nodeA.get(), info);
-    ControlSignalSource<Joy, ControlSignalJoy> src (nodeB.get(), info);
+    ControlSignalSink<Joy, ControlSignalJoy> sink(nodeA.get(), info);
+    ControlSignalSource<Joy, ControlSignalJoy> src(nodeB.get(), info);
 
     ASSERT_EQ(src.getState(), ControlSignalState::UNKNOWN);
 
@@ -108,7 +107,7 @@ TEST_F(TransportTest, SourceServiceModeActiveAfterSend)
 
     ASSERT_TRUE(sent);
     ASSERT_TRUE(cmdOk);
-    EXPECT_EQ(src.getState(),  ControlSignalState::ACTIVE);
+    EXPECT_EQ(src.getState(), ControlSignalState::ACTIVE);
     EXPECT_EQ(sink.getState(), ControlSignalState::ACTIVE);
 }
 
@@ -117,13 +116,16 @@ TEST_F(TransportTest, SinkTimeout)
 {
     auto nodeA = makeNode("tt_to_sink_a");
     auto nodeB = makeNode("tt_to_src_b");
-    auto info  = makeInfo("tt4/twist",
-                          CSConst::CONTROL_SIGNAL_TYPE_TWIST,
-                          CSConst::CONTROL_SIGNAL_MODE_TOPIC,
-                          "", false, 0, 400'000'000LL);  // 400 ms timeout
+    auto info = makeInfo("tt4/twist",
+                         CSConst::CONTROL_SIGNAL_TYPE_TWIST,
+                         CSConst::CONTROL_SIGNAL_MODE_TOPIC,
+                         "",
+                         false,
+                         0,
+                         400'000'000LL);  // 400 ms timeout
 
-    ControlSignalSink<Twist>   sink(nodeA.get(), info);
-    ControlSignalSource<Twist> src (nodeB.get(), info);
+    ControlSignalSink<Twist> sink(nodeA.get(), info);
+    ControlSignalSource<Twist> src(nodeB.get(), info);
 
     rclcpp::sleep_for(300ms);  // discovery
 
@@ -136,8 +138,7 @@ TEST_F(TransportTest, SinkTimeout)
     ASSERT_EQ(sink.getState(), ControlSignalState::ACTIVE);
 
     rclcpp::sleep_for(600ms);  // exceed timeout
-    EXPECT_EQ(sink.getState(), ControlSignalState::TIMEOUT)
-        << "got " << stateName(sink.getState());
+    EXPECT_EQ(sink.getState(), ControlSignalState::TIMEOUT) << "got " << stateName(sink.getState());
 }
 
 // ── T5: Keep-alive — Source becomes ACTIVE from the Sink's heartbeat ──────────
@@ -145,20 +146,22 @@ TEST_F(TransportTest, KeepAliveSourceActive)
 {
     auto nodeA = makeNode("tt_ka_sink_a");
     auto nodeB = makeNode("tt_ka_src_b");
-    auto info  = makeInfo("tt5/joy_ka",
-                          CSConst::CONTROL_SIGNAL_TYPE_JOY,
-                          CSConst::CONTROL_SIGNAL_MODE_TOPIC,
-                          "", true, 250'000'000LL, 2'000'000'000LL);
+    auto info = makeInfo("tt5/joy_ka",
+                         CSConst::CONTROL_SIGNAL_TYPE_JOY,
+                         CSConst::CONTROL_SIGNAL_MODE_TOPIC,
+                         "",
+                         true,
+                         250'000'000LL,
+                         2'000'000'000LL);
 
-    ControlSignalSink<Joy>   sink(nodeA.get(), info);  // heartbeat publisher
-    ControlSignalSource<Joy> src (nodeB.get(), info);  // heartbeat subscriber
+    ControlSignalSink<Joy> sink(nodeA.get(), info);  // heartbeat publisher
+    ControlSignalSource<Joy> src(nodeB.get(), info);  // heartbeat subscriber
 
     ASSERT_EQ(src.getState(), ControlSignalState::UNKNOWN);
 
     rclcpp::sleep_for(1100ms);  // ≥3 heartbeat ticks + discovery
 
-    EXPECT_EQ(src.getState(), ControlSignalState::ACTIVE)
-        << "got " << stateName(src.getState());
+    EXPECT_EQ(src.getState(), ControlSignalState::ACTIVE) << "got " << stateName(src.getState());
 }
 
 // ── T8: Twist service mode — round-trips values correctly ─────────────────────
@@ -166,13 +169,16 @@ TEST_F(TransportTest, TwistServiceModeRoundTrip)
 {
     auto nodeA = makeNode("tt_tws_sink_a");
     auto nodeB = makeNode("tt_tws_src_b");
-    auto info  = makeInfo("tt8/twist_svc",
-                          CSConst::CONTROL_SIGNAL_TYPE_TWIST,
-                          CSConst::CONTROL_SIGNAL_MODE_SERVICE,
-                          "", false, 0, 500'000'000LL);
+    auto info = makeInfo("tt8/twist_svc",
+                         CSConst::CONTROL_SIGNAL_TYPE_TWIST,
+                         CSConst::CONTROL_SIGNAL_MODE_SERVICE,
+                         "",
+                         false,
+                         0,
+                         500'000'000LL);
 
-    ControlSignalSink<Twist, ControlSignalTwist>   sink(nodeA.get(), info);
-    ControlSignalSource<Twist, ControlSignalTwist> src (nodeB.get(), info);
+    ControlSignalSink<Twist, ControlSignalTwist> sink(nodeA.get(), info);
+    ControlSignalSource<Twist, ControlSignalTwist> src(nodeB.get(), info);
 
     ASSERT_EQ(src.getState(), ControlSignalState::UNKNOWN);
 
@@ -180,20 +186,20 @@ TEST_F(TransportTest, TwistServiceModeRoundTrip)
 
     bool cmdOk = false;
     Twist twist;
-    twist.linear.x  = 1.5;
-    twist.linear.y  = 0.25;
+    twist.linear.x = 1.5;
+    twist.linear.y = 0.25;
     twist.angular.z = 0.75;
     bool sent = src.send(twist, cmdOk);
 
     ASSERT_TRUE(sent);
     ASSERT_TRUE(cmdOk);
-    EXPECT_EQ(src.getState(),  ControlSignalState::ACTIVE);
+    EXPECT_EQ(src.getState(), ControlSignalState::ACTIVE);
     EXPECT_EQ(sink.getState(), ControlSignalState::ACTIVE);
 
     Twist out;
     ASSERT_TRUE(sink.read(out));
-    EXPECT_NEAR(out.linear.x,  1.5,  1e-6);
-    EXPECT_NEAR(out.linear.y,  0.25, 1e-6);
+    EXPECT_NEAR(out.linear.x, 1.5, 1e-6);
+    EXPECT_NEAR(out.linear.y, 0.25, 1e-6);
     EXPECT_NEAR(out.angular.z, 0.75, 1e-6);
 }
 
@@ -205,16 +211,18 @@ TEST_F(TransportTest, SinkLowFreq)
 {
     auto nodeA = makeNode("tt_lf_sink_a");
     auto nodeB = makeNode("tt_lf_src_b");
-    auto info  = makeInfo("tt11/joy",
-                          CSConst::CONTROL_SIGNAL_TYPE_JOY,
-                          CSConst::CONTROL_SIGNAL_MODE_TOPIC,
-                          "", false, 0,
-                          2'000'000'000LL,  // 2 s timeout → LOW_FREQ after 1 s
-                          5.0f,             // monitoring-only metadata
-                          0);
+    auto info = makeInfo("tt11/joy",
+                         CSConst::CONTROL_SIGNAL_TYPE_JOY,
+                         CSConst::CONTROL_SIGNAL_MODE_TOPIC,
+                         "",
+                         false,
+                         0,
+                         2'000'000'000LL,  // 2 s timeout → LOW_FREQ after 1 s
+                         5.0f,  // monitoring-only metadata
+                         0);
 
-    ControlSignalSink<Joy>   sink(nodeA.get(), info);
-    ControlSignalSource<Joy> src (nodeB.get(), info);
+    ControlSignalSink<Joy> sink(nodeA.get(), info);
+    ControlSignalSource<Joy> src(nodeB.get(), info);
 
     ASSERT_EQ(sink.getState(), ControlSignalState::UNKNOWN);
 
@@ -229,8 +237,7 @@ TEST_F(TransportTest, SinkLowFreq)
 
     // Elapsed since last message crosses timeout/2 (1 s) but stays below timeout (2 s).
     rclcpp::sleep_for(1200ms);
-    EXPECT_EQ(sink.getState(), ControlSignalState::LOW_FREQ)
-        << "got " << stateName(sink.getState());
+    EXPECT_EQ(sink.getState(), ControlSignalState::LOW_FREQ) << "got " << stateName(sink.getState());
 
     // A fresh message restores ACTIVE.
     src.send(joy, cmdOk);
@@ -238,8 +245,7 @@ TEST_F(TransportTest, SinkLowFreq)
     EXPECT_EQ(sink.getState(), ControlSignalState::ACTIVE);
 
     rclcpp::sleep_for(2100ms);  // exceed full timeout
-    EXPECT_EQ(sink.getState(), ControlSignalState::TIMEOUT)
-        << "got " << stateName(sink.getState());
+    EXPECT_EQ(sink.getState(), ControlSignalState::TIMEOUT) << "got " << stateName(sink.getState());
 }
 
 // ── NEW: String topic delivery ────────────────────────────────────────────────
@@ -247,12 +253,10 @@ TEST_F(TransportTest, StringTopicDelivery)
 {
     auto nodeA = makeNode("tt_str_sink_a");
     auto nodeB = makeNode("tt_str_src_b");
-    auto info  = makeInfo("ttN/string",
-                          CSConst::CONTROL_SIGNAL_TYPE_STRING,
-                          CSConst::CONTROL_SIGNAL_MODE_TOPIC);
+    auto info = makeInfo("ttN/string", CSConst::CONTROL_SIGNAL_TYPE_STRING, CSConst::CONTROL_SIGNAL_MODE_TOPIC);
 
-    ControlSignalSink<Str>   sink(nodeA.get(), info);
-    ControlSignalSource<Str> src (nodeB.get(), info);
+    ControlSignalSink<Str> sink(nodeA.get(), info);
+    ControlSignalSource<Str> src(nodeB.get(), info);
 
     rclcpp::sleep_for(300ms);  // discovery
 
@@ -274,14 +278,12 @@ TEST_F(TransportTest, ErasedSendAndRead)
 {
     auto nodeA = makeNode("tt_er_sink_a");
     auto nodeB = makeNode("tt_er_src_b");
-    auto info  = makeInfo("ttN/erased",
-                          CSConst::CONTROL_SIGNAL_TYPE_JOY,
-                          CSConst::CONTROL_SIGNAL_MODE_TOPIC);
+    auto info = makeInfo("ttN/erased", CSConst::CONTROL_SIGNAL_TYPE_JOY, CSConst::CONTROL_SIGNAL_MODE_TOPIC);
 
-    ControlSignalSink<Joy>   sink(nodeA.get(), info);
-    ControlSignalSource<Joy> src (nodeB.get(), info);
+    ControlSignalSink<Joy> sink(nodeA.get(), info);
+    ControlSignalSource<Joy> src(nodeB.get(), info);
 
-    BaseControlSignalSink*   bsnk = &sink;
+    BaseControlSignalSink* bsnk = &sink;
     BaseControlSignalSource* bsrc = &src;
 
     // msgType() reports the concrete message type without knowing srvT.
@@ -307,20 +309,18 @@ TEST_F(TransportTest, ErasedSendAndRead)
 TEST_F(TransportTest, MarkDisconnected)
 {
     auto node = makeNode("tt_disc");
-    auto info = makeInfo("ttN/disc",
-                         CSConst::CONTROL_SIGNAL_TYPE_JOY,
-                         CSConst::CONTROL_SIGNAL_MODE_TOPIC);
+    auto info = makeInfo("ttN/disc", CSConst::CONTROL_SIGNAL_TYPE_JOY, CSConst::CONTROL_SIGNAL_MODE_TOPIC);
 
     ControlSignalSource<Joy> src(node.get(), info);
-    ControlSignalSink<Joy>   sink(node.get(), info);
+    ControlSignalSink<Joy> sink(node.get(), info);
 
-    ASSERT_NE(src.getState(),  ControlSignalState::DISCONNECTED);
+    ASSERT_NE(src.getState(), ControlSignalState::DISCONNECTED);
     ASSERT_NE(sink.getState(), ControlSignalState::DISCONNECTED);
 
     src.markDisconnected();
     sink.markDisconnected();
 
-    EXPECT_EQ(src.getState(),  ControlSignalState::DISCONNECTED);
+    EXPECT_EQ(src.getState(), ControlSignalState::DISCONNECTED);
     EXPECT_EQ(sink.getState(), ControlSignalState::DISCONNECTED);
 }
 
@@ -328,12 +328,14 @@ TEST_F(TransportTest, MarkDisconnected)
 TEST_F(TransportTest, ReverseTypeKeyLookup)
 {
     auto& factory = ControlSignalFactory::Instance();
-    EXPECT_EQ(factory.typeKey(std::type_index(typeid(Joy))),   CSConst::CONTROL_SIGNAL_TYPE_JOY);
+    EXPECT_EQ(factory.typeKey(std::type_index(typeid(Joy))), CSConst::CONTROL_SIGNAL_TYPE_JOY);
     EXPECT_EQ(factory.typeKey(std::type_index(typeid(Twist))), CSConst::CONTROL_SIGNAL_TYPE_TWIST);
-    EXPECT_EQ(factory.typeKey(std::type_index(typeid(Str))),   CSConst::CONTROL_SIGNAL_TYPE_STRING);
+    EXPECT_EQ(factory.typeKey(std::type_index(typeid(Str))), CSConst::CONTROL_SIGNAL_TYPE_STRING);
 
     // An unregistered type resolves to an empty string.
-    struct NeverRegistered {};
+    struct NeverRegistered
+    {
+    };
     EXPECT_TRUE(factory.typeKey(std::type_index(typeid(NeverRegistered))).empty());
 }
 
@@ -344,9 +346,8 @@ TEST_F(TransportTest, FactoryCreateSourceSink)
     auto& factory = ControlSignalFactory::Instance();
 
     // Topic-mode joy source/sink.
-    auto topicInfo = makeInfo("ttN/factory_topic",
-                              CSConst::CONTROL_SIGNAL_TYPE_JOY,
-                              CSConst::CONTROL_SIGNAL_MODE_TOPIC);
+    auto topicInfo =
+        makeInfo("ttN/factory_topic", CSConst::CONTROL_SIGNAL_TYPE_JOY, CSConst::CONTROL_SIGNAL_MODE_TOPIC);
     auto src = factory.CreateSource(CSConst::CONTROL_SIGNAL_TYPE_JOY, node.get(), topicInfo);
     auto snk = factory.CreateSink(CSConst::CONTROL_SIGNAL_TYPE_JOY, node.get(), topicInfo);
     ASSERT_NE(src, nullptr);
@@ -358,13 +359,15 @@ TEST_F(TransportTest, FactoryCreateSourceSink)
     auto svcInfo = makeInfo("ttN/factory_svc",
                             CSConst::CONTROL_SIGNAL_TYPE_JOY,
                             CSConst::CONTROL_SIGNAL_MODE_SERVICE,
-                            "", false, 0, 500'000'000LL);
+                            "",
+                            false,
+                            0,
+                            500'000'000LL);
     EXPECT_NE(factory.CreateSource(CSConst::CONTROL_SIGNAL_TYPE_JOY, node.get(), svcInfo), nullptr);
     EXPECT_NE(factory.CreateSink(CSConst::CONTROL_SIGNAL_TYPE_JOY, node.get(), svcInfo), nullptr);
 
     // Unknown type → throws std::runtime_error.
-    auto badInfo = makeInfo("ttN/factory_bad", "no_such_type",
-                            CSConst::CONTROL_SIGNAL_MODE_TOPIC);
+    auto badInfo = makeInfo("ttN/factory_bad", "no_such_type", CSConst::CONTROL_SIGNAL_MODE_TOPIC);
     EXPECT_THROW(factory.CreateSource("no_such_type", node.get(), badInfo), std::runtime_error);
     EXPECT_THROW(factory.CreateSink("no_such_type", node.get(), badInfo), std::runtime_error);
 }
