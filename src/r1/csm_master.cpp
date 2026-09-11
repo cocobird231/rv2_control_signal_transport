@@ -37,12 +37,10 @@ int main(int argc, char** argv)
     opt.pairGraceMs = node->get_parameter("pair_grace_ms").as_int();
 
     rv2_interfaces::r1::CsmMaster master(node.get(), opt);
-    const auto whitelist =
-        node->get_parameter("csm_whitelist").as_string_array();
+    const auto whitelist = node->get_parameter("csm_whitelist").as_string_array();
     if (!whitelist.empty())
         master.enableCsmWhitelist(whitelist);
-    const auto blacklist =
-        node->get_parameter("csm_blacklist").as_string_array();
+    const auto blacklist = node->get_parameter("csm_blacklist").as_string_array();
     if (!blacklist.empty())
         master.enableCsmBlacklist(blacklist);
 

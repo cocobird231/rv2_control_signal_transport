@@ -14,8 +14,6 @@
 
 #include "rv2_control_signal_transport/r1/control_signal_factory.h"
 
-R1_REGISTER_CONTROL_SIGNAL(r1_joy, "joy", sensor_msgs::msg::Joy,
-                           r1_interfaces::srv::ControlSignalJoy)
-R1_REGISTER_CONTROL_SIGNAL(r1_twist, "twist", geometry_msgs::msg::Twist,
-                           r1_interfaces::srv::ControlSignalTwist)
+R1_REGISTER_CONTROL_SIGNAL(r1_joy, "joy", sensor_msgs::msg::Joy, r1_interfaces::srv::ControlSignalJoy)
+R1_REGISTER_CONTROL_SIGNAL(r1_twist, "twist", geometry_msgs::msg::Twist, r1_interfaces::srv::ControlSignalTwist)
 R1_REGISTER_CONTROL_SIGNAL(r1_string, "string", std_msgs::msg::String, void)

@@ -55,24 +55,20 @@ namespace rv2_interfaces
 class ControlSignalFactory
 {
 public:
-    using SourceCreator = std::function<
-        std::unique_ptr<BaseControlSignalSource>(
-            rclcpp::Node*,
-            const msg::ControlSignalInfo&)>;
+    using SourceCreator =
+        std::function<std::unique_ptr<BaseControlSignalSource>(rclcpp::Node*, const msg::ControlSignalInfo&)>;
 
-    using SinkCreator = std::function<
-        std::unique_ptr<BaseControlSignalSink>(
-            rclcpp::Node*,
-            const msg::ControlSignalInfo&)>;
+    using SinkCreator =
+        std::function<std::unique_ptr<BaseControlSignalSink>(rclcpp::Node*, const msg::ControlSignalInfo&)>;
 
 private:
     struct Entry
     {
         SourceCreator sourceCreator;
-        SinkCreator   sinkCreator;
+        SinkCreator sinkCreator;
     };
 
-    std::unordered_map<std::string, Entry>           registry_;
+    std::unordered_map<std::string, Entry> registry_;
     std::unordered_map<std::type_index, std::string> reverseRegistry_;
 
     ControlSignalFactory() = default;
@@ -83,7 +79,7 @@ public:
     /// share one registry regardless of how many translation units include this header.
     static ControlSignalFactory& Instance();
 
-    ControlSignalFactory(const ControlSignalFactory&)            = delete;
+    ControlSignalFactory(const ControlSignalFactory&) = delete;
     ControlSignalFactory& operator=(const ControlSignalFactory&) = delete;
 
     /**
@@ -97,21 +93,17 @@ public:
      * @tparam SrvT  ROS 2 service type, or void for topic-only.
      * @param  name  Control-type string (e.g. "joy").
      */
-    template<typename MsgT, typename SrvT = void>
-    void Register(const std::string& name)
+    template <typename MsgT, typename SrvT = void> void Register(const std::string& name)
     {
-        registry_[name] = Entry{
-            [](rclcpp::Node* node, const msg::ControlSignalInfo& info)
-                -> std::unique_ptr<BaseControlSignalSource>
-            {
-                return std::make_unique<ControlSignalSource<MsgT, SrvT>>(node, info);
-            },
-            [](rclcpp::Node* node, const msg::ControlSignalInfo& info)
-                -> std::unique_ptr<BaseControlSignalSink>
-            {
-                return std::make_unique<ControlSignalSink<MsgT, SrvT>>(node, info);
-            }
-        };
+        registry_[name] =
+            Entry{[](rclcpp::Node* node, const msg::ControlSignalInfo& info) -> std::unique_ptr<BaseControlSignalSource>
+                  {
+                      return std::make_unique<ControlSignalSource<MsgT, SrvT>>(node, info);
+                  },
+                  [](rclcpp::Node* node, const msg::ControlSignalInfo& info) -> std::unique_ptr<BaseControlSignalSink>
+                  {
+                      return std::make_unique<ControlSignalSink<MsgT, SrvT>>(node, info);
+                  }};
         reverseRegistry_[std::type_index(typeid(MsgT))] = name;
     }
 
@@ -121,15 +113,11 @@ public:
      * @throws std::runtime_error if @p name was not registered.
      */
     std::unique_ptr<BaseControlSignalSource>
-    CreateSource(
-        const std::string& name,
-        rclcpp::Node* node,
-        const msg::ControlSignalInfo& info)
+    CreateSource(const std::string& name, rclcpp::Node* node, const msg::ControlSignalInfo& info)
     {
         auto it = registry_.find(name);
         if (it == registry_.end())
-            throw std::runtime_error(
-                "ControlSignalFactory: unknown control type '" + name + "'");
+            throw std::runtime_error("ControlSignalFactory: unknown control type '" + name + "'");
         return it->second.sourceCreator(node, info);
     }
 
@@ -139,15 +127,11 @@ public:
      * @throws std::runtime_error if @p name was not registered.
      */
     std::unique_ptr<BaseControlSignalSink>
-    CreateSink(
-        const std::string& name,
-        rclcpp::Node* node,
-        const msg::ControlSignalInfo& info)
+    CreateSink(const std::string& name, rclcpp::Node* node, const msg::ControlSignalInfo& info)
     {
         auto it = registry_.find(name);
         if (it == registry_.end())
-            throw std::runtime_error(
-                "ControlSignalFactory: unknown control type '" + name + "'");
+            throw std::runtime_error("ControlSignalFactory: unknown control type '" + name + "'");
         return it->second.sinkCreator(node, info);
     }
 
@@ -161,7 +145,6 @@ public:
         return (it != reverseRegistry_.end()) ? it->second : std::string{};
     }
 };
-
 
 // ============================================================
 //  REGISTER_CONTROL_SIGNAL macro
@@ -208,17 +191,17 @@ public:
  * ControlSignalFactory::Instance().Register<MsgType, SrvType>(name_str)
  * at program startup — no explicit call is required.
  */
-#define REGISTER_CONTROL_SIGNAL(UniqueId, name_str, MsgType, SrvType)       \
-    namespace {                                                              \
-    struct _ControlSignalAutoRegister_##UniqueId {                          \
-        _ControlSignalAutoRegister_##UniqueId() {                           \
-            ::rv2_interfaces::ControlSignalFactory::Instance()              \
-                .Register<MsgType, SrvType>(name_str);                      \
-        }                                                                    \
-    };                                                                       \
-    static _ControlSignalAutoRegister_##UniqueId                            \
-        _rv2_cs_instance_##UniqueId; /* NOLINT(cert-err58-cpp) */           \
-    } // anonymous namespace
+#define REGISTER_CONTROL_SIGNAL(UniqueId, name_str, MsgType, SrvType)                                                  \
+    namespace                                                                                                          \
+    {                                                                                                                  \
+    struct _ControlSignalAutoRegister_##UniqueId                                                                       \
+    {                                                                                                                  \
+        _ControlSignalAutoRegister_##UniqueId()                                                                        \
+        {                                                                                                              \
+            ::rv2_interfaces::ControlSignalFactory::Instance().Register<MsgType, SrvType>(name_str);                   \
+        }                                                                                                              \
+    };                                                                                                                 \
+    static _ControlSignalAutoRegister_##UniqueId _rv2_cs_instance_##UniqueId; /* NOLINT(cert-err58-cpp) */             \
+    }  // anonymous namespace
 
-
-} // namespace rv2_interfaces
+}  // namespace rv2_interfaces

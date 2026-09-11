@@ -51,11 +51,9 @@ using EntryStatusT = r1_interfaces::msg::EntryStatus;
 
 constexpr int64_t kMs = 1'000'000;
 
-bool waitFor(const std::function<bool()>& cond, int64_t timeoutMs = 5000,
-             int64_t pollMs = 10)
+bool waitFor(const std::function<bool()>& cond, int64_t timeoutMs = 5000, int64_t pollMs = 10)
 {
-    const auto deadline =
-        std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
     while (std::chrono::steady_clock::now() < deadline)
     {
         if (cond())
@@ -80,8 +78,8 @@ struct MockMaster
     {
         reg = node->create_service<CsmRegisterSrv>(
             masterName + "/register",
-            [this](const std::shared_ptr<CsmRegisterSrv::Request> rq,
-                   std::shared_ptr<CsmRegisterSrv::Response> rs) {
+            [this](const std::shared_ptr<CsmRegisterSrv::Request> rq, std::shared_ptr<CsmRegisterSrv::Response> rs)
+            {
                 {
                     std::lock_guard<std::mutex> lk(mtx);
                     registers.push_back(*rq);
@@ -97,14 +95,13 @@ struct MockMaster
     {
         hb = hbNode_->create_service<CsmHeartbeatSrv>(
             hbName_,
-            [this](const std::shared_ptr<CsmHeartbeatSrv::Request> rq,
-                   std::shared_ptr<CsmHeartbeatSrv::Response> rs) {
+            [this](const std::shared_ptr<CsmHeartbeatSrv::Request> rq, std::shared_ptr<CsmHeartbeatSrv::Response> rs)
+            {
                 int nowPer = 0;
                 {
                     std::lock_guard<std::mutex> lk(mtx);
                     nowPer = ++concurrentPer[rq->csm_name];
-                    maxConcurrentPer[rq->csm_name] =
-                        std::max(maxConcurrentPer[rq->csm_name], nowPer);
+                    maxConcurrentPer[rq->csm_name] = std::max(maxConcurrentPer[rq->csm_name], nowPer);
                     ++heartbeats;
                 }
                 if (answerUnknownOnce.exchange(false))
@@ -167,13 +164,16 @@ protected:
         nodeA_ = std::make_shared<rclcpp::Node>("csm_a_" + uid_);
         nodeB_ = std::make_shared<rclcpp::Node>("csm_b_" + uid_);
         auxNode_ = std::make_shared<rclcpp::Node>("aux_" + uid_);
-        executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>(
-            rclcpp::ExecutorOptions(), 4);
+        executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>(rclcpp::ExecutorOptions(), 4);
         executor_->add_node(nodeA_);
         executor_->add_node(nodeB_);
         executor_->add_node(auxNode_);
         master_ = std::make_unique<MockMaster>(auxNode_.get(), masterName());
-        spin_ = std::thread([this] { executor_->spin(); });
+        spin_ = std::thread(
+            [this]
+            {
+                executor_->spin();
+            });
         while (!executor_->is_spinning())
             std::this_thread::sleep_for(1ms);
     }
@@ -206,21 +206,25 @@ protected:
         o.pendingTtlMs = 800;
         o.maxRegisterTimeoutMs = 5000;
         o.masterName = masterName();
-        o.csmTimeoutNs = 2'000 * kMs;         // tick << csmTimeout/2
+        o.csmTimeoutNs = 2'000 * kMs;  // tick << csmTimeout/2
         o.csmDisconnectTimeoutNs = 20'000 * kMs;
         return o;
     }
 
     void makeManagers(bool autoRetry = false, int64_t tickMs = 50)
     {
-        mgrA_ = std::make_unique<ControlSignalManager>(nodeA_.get(), nameA(),
-                                                       makeOptions(autoRetry, tickMs));
-        mgrB_ = std::make_unique<ControlSignalManager>(nodeB_.get(), nameB(),
-                                                       makeOptions(autoRetry, tickMs));
-        ASSERT_TRUE(waitFor([&] {
-            return mgrA_->getName() == nameA();   // trivial; wait for first ticks:
-        }));
-        ASSERT_TRUE(waitFor([&] { return tickObserved(*mgrA_) && tickObserved(*mgrB_); }));
+        mgrA_ = std::make_unique<ControlSignalManager>(nodeA_.get(), nameA(), makeOptions(autoRetry, tickMs));
+        mgrB_ = std::make_unique<ControlSignalManager>(nodeB_.get(), nameB(), makeOptions(autoRetry, tickMs));
+        ASSERT_TRUE(waitFor(
+            [&]
+            {
+                return mgrA_->getName() == nameA();  // trivial; wait for first ticks:
+            }));
+        ASSERT_TRUE(waitFor(
+            [&]
+            {
+                return tickObserved(*mgrA_) && tickObserved(*mgrB_);
+            }));
     }
 
     static bool tickObserved(ControlSignalManager& m)
@@ -228,11 +232,11 @@ protected:
         // registerSource's precondition flag flips on the first tick; probe it
         // with an invalid call that fails fast either way.
         const auto r = m.registerSource(ControlSignalInfo(), 1);
-        return r.code != RegisterError::INVALID_CONTEXT ||
-               m.getSourceInfoList().empty() == false;
+        return r.code != RegisterError::INVALID_CONTEXT || m.getSourceInfoList().empty() == false;
     }
 
-    ControlSignalInfo info(const std::string& tag, const std::string& target,
+    ControlSignalInfo info(const std::string& tag,
+                           const std::string& target,
                            int64_t timeoutNs = 200 * kMs,
                            int64_t disconnectNs = 5'000 * kMs,
                            const std::string& mode = "topic")
@@ -250,20 +254,24 @@ protected:
     }
 
     /// Latest status snapshot of a manager, captured via a transient sub.
-    bool captureStatus(const std::string& mgrName, ManagerStatusT& out,
-                       int64_t timeoutMs = 3000)
+    bool captureStatus(const std::string& mgrName, ManagerStatusT& out, int64_t timeoutMs = 3000)
     {
         std::mutex mtx;
         std::optional<ManagerStatusT> got;
-        auto sub = auxNode_->create_subscription<ManagerStatusT>(
-            mgrName + "/status", 10, [&](const ManagerStatusT& m) {
+        auto sub = auxNode_->create_subscription<ManagerStatusT>(mgrName + "/status",
+                                                                 10,
+                                                                 [&](const ManagerStatusT& m)
+                                                                 {
+                                                                     std::lock_guard<std::mutex> lk(mtx);
+                                                                     got = m;
+                                                                 });
+        const bool ok = waitFor(
+            [&]
+            {
                 std::lock_guard<std::mutex> lk(mtx);
-                got = m;
-            });
-        const bool ok = waitFor([&] {
-            std::lock_guard<std::mutex> lk(mtx);
-            return got.has_value();
-        }, timeoutMs);
+                return got.has_value();
+            },
+            timeoutMs);
         if (ok)
         {
             std::lock_guard<std::mutex> lk(mtx);
@@ -292,9 +300,11 @@ TEST_F(ManagerTest, M1_NormalRegistration)
     ASSERT_EQ(r.code, RegisterError::OK);
     EXPECT_TRUE(r.handle.valid());
     EXPECT_TRUE(r.handle.ready());
-    ASSERT_TRUE(waitFor([&] {
-        return mgrB_->getSinkState(i.controller_name).has_value();
-    }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return mgrB_->getSinkState(i.controller_name).has_value();
+        }));
 
     ManagerStatusT stA, stB;
     ASSERT_TRUE(captureStatus(nameA(), stA));
@@ -303,8 +313,7 @@ TEST_F(ManagerTest, M1_NormalRegistration)
     ASSERT_EQ(stB.sinks.size(), 1u);
     EXPECT_EQ(stA.sources[0].registration_id, stB.sinks[0].registration_id);
     EXPECT_EQ(stA.sources[0].attempt_generation, stB.sinks[0].attempt_generation);
-    EXPECT_EQ(stA.sources[0].source_csm_instance_id,
-              stB.sinks[0].source_csm_instance_id);
+    EXPECT_EQ(stA.sources[0].source_csm_instance_id, stB.sinks[0].source_csm_instance_id);
 }
 
 // M2: local duplicate controller or channel — error without any remote call.
@@ -313,15 +322,19 @@ TEST_F(ManagerTest, M2_LocalDuplicates)
     makeManagers();
     const auto i = info("m2", nameB());
     ASSERT_EQ(mgrA_->registerSource(i).code, RegisterError::OK);
-    ASSERT_TRUE(waitFor([&] { return mgrB_->getSinkInfoList().size() == 1; }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return mgrB_->getSinkInfoList().size() == 1;
+        }));
 
     EXPECT_EQ(mgrA_->registerSource(i).code, RegisterError::DUPLICATE);
     auto i2 = info("m2b", nameB());
-    i2.channel_name = i.channel_name;   // duplicate channel, new controller
+    i2.channel_name = i.channel_name;  // duplicate channel, new controller
     EXPECT_EQ(mgrA_->registerSource(i2).code, RegisterError::DUPLICATE);
 
     std::this_thread::sleep_for(200ms);
-    EXPECT_EQ(mgrB_->getSinkInfoList().size(), 1u);   // no second Sink appeared
+    EXPECT_EQ(mgrB_->getSinkInfoList().size(), 1u);  // no second Sink appeared
 }
 
 // M3: cross-manager duplicate — remote refuses; no PENDING remnant on A2.
@@ -331,11 +344,13 @@ TEST_F(ManagerTest, M3_CrossManagerDuplicate)
     const auto i = info("m3", nameB());
     ASSERT_EQ(mgrA_->registerSource(i).code, RegisterError::OK);
 
-    auto mgrA2 = std::make_unique<ControlSignalManager>(auxNode_.get(),
-                                                        "csmA2_" + uid_,
-                                                        makeOptions(false));
-    ASSERT_TRUE(waitFor([&] { return tickObserved(*mgrA2); }));
-    auto i2 = i;   // same controller & channel, other manager
+    auto mgrA2 = std::make_unique<ControlSignalManager>(auxNode_.get(), "csmA2_" + uid_, makeOptions(false));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return tickObserved(*mgrA2);
+        }));
+    auto i2 = i;  // same controller & channel, other manager
     const auto r = mgrA2->registerSource(i2);
     // Remote refuses with a typed D3 conflict; per §2.4 that conflict enters
     // mandatory RETRY_WAIT (retry-until-success), so the row's "no PENDING
@@ -348,7 +363,7 @@ TEST_F(ManagerTest, M3_CrossManagerDuplicate)
     ASSERT_EQ(st.sources.size(), 1u);
     EXPECT_EQ(st.sources[0].registration_phase, EntryStatusT::PHASE_RETRY_WAIT);
     EXPECT_NE(st.sources[0].registration_phase, EntryStatusT::PHASE_PENDING);
-    EXPECT_TRUE(mgrA2->unregisterSource(r.handle));   // clean shutdown
+    EXPECT_TRUE(mgrA2->unregisterSource(r.handle));  // clean shutdown
 }
 
 // M4: registration storm — 16 threads, same controller; exactly one wins,
@@ -363,30 +378,33 @@ TEST_F(ManagerTest, M4_RegistrationStorm)
     for (int k = 0; k < 3; ++k)
     {
         const std::string n = "t4x" + std::to_string(k) + "_" + uid_;
-        extras.push_back(std::make_unique<ControlSignalManager>(auxNode_.get(), n,
-                                                                makeOptions(false)));
+        extras.push_back(std::make_unique<ControlSignalManager>(auxNode_.get(), n, makeOptions(false)));
         targets.push_back(n);
     }
-    ASSERT_TRUE(waitFor([&] {
-        for (auto& e : extras)
-            if (!tickObserved(*e))
-                return false;
-        return true;
-    }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            for (auto& e : extras)
+                if (!tickObserved(*e))
+                    return false;
+            return true;
+        }));
     std::atomic<int> ok{0}, dup{0}, other{0};
     std::vector<std::thread> threads;
     for (int t = 0; t < 16; ++t)
-        threads.emplace_back([&, t] {
-            auto i = info("m4", targets[t % targets.size()]);
-            i.channel_name += "_" + std::to_string(t);   // same controller only
-            const auto r = mgrA_->registerSource(i);
-            if (r.code == RegisterError::OK)
-                ok.fetch_add(1);
-            else if (r.code == RegisterError::DUPLICATE)
-                dup.fetch_add(1);
-            else
-                other.fetch_add(1);
-        });
+        threads.emplace_back(
+            [&, t]
+            {
+                auto i = info("m4", targets[t % targets.size()]);
+                i.channel_name += "_" + std::to_string(t);  // same controller only
+                const auto r = mgrA_->registerSource(i);
+                if (r.code == RegisterError::OK)
+                    ok.fetch_add(1);
+                else if (r.code == RegisterError::DUPLICATE)
+                    dup.fetch_add(1);
+                else
+                    other.fetch_add(1);
+            });
     for (auto& t : threads)
         t.join();
     EXPECT_EQ(ok.load(), 1);
@@ -402,7 +420,11 @@ TEST_F(ManagerTest, M5_RetryAfterTargetAppears)
 {
     makeManagers(/*autoRetry=*/true);
     Events ev;
-    mgrA_->setNotificationCallback([&](const auto& e) { ev.push(e); });
+    mgrA_->setNotificationCallback(
+        [&](const auto& e)
+        {
+            ev.push(e);
+        });
 
     const std::string lateName = "late_" + uid_;
     const auto i = info("m5", lateName);
@@ -411,24 +433,33 @@ TEST_F(ManagerTest, M5_RetryAfterTargetAppears)
     EXPECT_TRUE(r.handle.valid());
     EXPECT_FALSE(r.handle.ready());
 
-    auto late = std::make_unique<ControlSignalManager>(auxNode_.get(), lateName,
-                                                       makeOptions(false));
-    ASSERT_TRUE(waitFor([&] { return r.handle.ready(); }, 8000));
+    auto late = std::make_unique<ControlSignalManager>(auxNode_.get(), lateName, makeOptions(false));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return r.handle.ready();
+        },
+        8000));
     EXPECT_GE(ev.count(ControlSignalManager::EventKind::RETRY_SUCCEEDED), 1);
-    EXPECT_TRUE(waitFor([&] {
-        return late->getSinkState(i.controller_name).has_value();
-    }));
+    EXPECT_TRUE(waitFor(
+        [&]
+        {
+            return late->getSinkState(i.controller_name).has_value();
+        }));
 
     // Policy disabled: the slot is removed outright, no RETRY_SCHEDULED.
-    auto noRetry = std::make_unique<ControlSignalManager>(
-        auxNode_.get(), "noretry5_" + uid_, makeOptions(false));
-    ASSERT_TRUE(waitFor([&] { return tickObserved(*noRetry); }));
+    auto noRetry = std::make_unique<ControlSignalManager>(auxNode_.get(), "noretry5_" + uid_, makeOptions(false));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return tickObserved(*noRetry);
+        }));
     const auto r2 = noRetry->registerSource(info("m5b", "void5_" + uid_));
     EXPECT_EQ(r2.code, RegisterError::TARGET_UNREACHABLE);
     EXPECT_FALSE(r2.handle.valid());
     EXPECT_TRUE(noRetry->getSourceInfoList().empty());
-    EXPECT_FALSE(noRetry->getSource(info("m5b", "void5_" + uid_).controller_name)
-                     .valid());   // no RETRY_WAIT slot leaked either
+    EXPECT_FALSE(
+        noRetry->getSource(info("m5b", "void5_" + uid_).controller_name).valid());  // no RETRY_WAIT slot leaked either
 }
 
 // M6: remote accepts but the response is lost (server answers after the
@@ -440,14 +471,14 @@ TEST_F(ManagerTest, M6_ResponseLossRollback)
     std::vector<ManageSrv::Request> seen;
     auto slowTarget = auxNode_->create_service<ManageSrv>(
         "slowT_" + uid_ + "/control_signal_manage",
-        [&](const std::shared_ptr<ManageSrv::Request> rq,
-            std::shared_ptr<ManageSrv::Response> rs) {
+        [&](const std::shared_ptr<ManageSrv::Request> rq, std::shared_ptr<ManageSrv::Response> rs)
+        {
             {
                 std::lock_guard<std::mutex> lk(mtx);
                 seen.push_back(*rq);
             }
             if (rq->op == ManageSrv::Request::OP_REGISTER)
-                std::this_thread::sleep_for(700ms);   // beyond the caller timeout
+                std::this_thread::sleep_for(700ms);  // beyond the caller timeout
             rs->response = ManageSrv::Response::RESPONSE_SUCCESS;
         });
 
@@ -458,13 +489,16 @@ TEST_F(ManagerTest, M6_ResponseLossRollback)
     EXPECT_TRUE(mgrA_->getSourceInfoList().empty());
 
     // The rollback UNREGISTER arrives with the same identity triple.
-    ASSERT_TRUE(waitFor([&] {
-        std::lock_guard<std::mutex> lk(mtx);
-        for (const auto& q : seen)
-            if (q.op == ManageSrv::Request::OP_UNREGISTER)
-                return true;
-        return false;
-    }, 5000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            std::lock_guard<std::mutex> lk(mtx);
+            for (const auto& q : seen)
+                if (q.op == ManageSrv::Request::OP_UNREGISTER)
+                    return true;
+            return false;
+        },
+        5000));
     {
         std::lock_guard<std::mutex> lk(mtx);
         ASSERT_GE(seen.size(), 2u);
@@ -489,13 +523,23 @@ TEST_F(ManagerTest, M7_UnregisterStates)
     const auto i1 = info("m7a", nameB());
     auto r1 = mgrA_->registerSource(i1);
     ASSERT_EQ(r1.code, RegisterError::OK);
-    ASSERT_TRUE(waitFor([&] { return mgrB_->getSinkState(i1.controller_name).has_value(); }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return mgrB_->getSinkState(i1.controller_name).has_value();
+        }));
     EXPECT_TRUE(mgrA_->unregisterSource(r1.handle));
-    EXPECT_FALSE(r1.handle.valid());   // immediate
-    ASSERT_TRUE(waitFor([&] { return mgrA_->getSourceInfoList().empty(); }));
-    ASSERT_TRUE(waitFor([&] {
-        return !mgrB_->getSinkState(i1.controller_name).has_value();
-    }));
+    EXPECT_FALSE(r1.handle.valid());  // immediate
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return mgrA_->getSourceInfoList().empty();
+        }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return !mgrB_->getSinkState(i1.controller_name).has_value();
+        }));
 
     // RETRY_WAIT: slot vanishes now; target coming up later must not revive.
     const std::string lateName = "late7_" + uid_;
@@ -506,8 +550,7 @@ TEST_F(ManagerTest, M7_UnregisterStates)
     EXPECT_FALSE(r2.handle.valid());
     EXPECT_TRUE(mgrA_->getSourceInfoList().empty());
 
-    auto late = std::make_unique<ControlSignalManager>(auxNode_.get(), lateName,
-                                                       makeOptions(false));
+    auto late = std::make_unique<ControlSignalManager>(auxNode_.get(), lateName, makeOptions(false));
     std::this_thread::sleep_for(600ms);
     EXPECT_FALSE(r2.handle.valid());
     EXPECT_FALSE(late->getSinkState(i2.controller_name).has_value());
@@ -519,8 +562,8 @@ TEST_F(ManagerTest, M7_UnregisterStates)
     std::vector<ManageSrv::Request> m7seen;
     auto slowT = auxNode_->create_service<ManageSrv>(
         "slow7_" + uid_ + "/control_signal_manage",
-        [&](const std::shared_ptr<ManageSrv::Request> rq,
-            std::shared_ptr<ManageSrv::Response> rs) {
+        [&](const std::shared_ptr<ManageSrv::Request> rq, std::shared_ptr<ManageSrv::Response> rs)
+        {
             {
                 std::lock_guard<std::mutex> lk(m7mtx);
                 m7seen.push_back(*rq);
@@ -531,29 +574,36 @@ TEST_F(ManagerTest, M7_UnregisterStates)
         });
     const auto i3 = info("m7c", "slow7_" + uid_);
     std::atomic<RegisterError> inFlightCode{RegisterError::OK};
-    std::thread reg([&] {
-        inFlightCode.store(mgrA_->registerSource(i3, 2000).code);
-    });
-    ASSERT_TRUE(waitFor([&] {
-        std::lock_guard<std::mutex> lk(m7mtx);
-        return !m7seen.empty();
-    }));
+    std::thread reg(
+        [&]
+        {
+            inFlightCode.store(mgrA_->registerSource(i3, 2000).code);
+        });
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            std::lock_guard<std::mutex> lk(m7mtx);
+            return !m7seen.empty();
+        }));
     // Request on the wire: cancel via the handle from getSource (PENDING).
     auto pending = mgrA_->getSource(i3.controller_name);
     EXPECT_TRUE(mgrA_->unregisterSource(pending));
     reg.join();
     EXPECT_EQ(inFlightCode.load(), RegisterError::TIMEOUT_UNKNOWN);
     EXPECT_TRUE(mgrA_->getSourceInfoList().empty());
-    ASSERT_TRUE(waitFor([&] {
-        std::lock_guard<std::mutex> lk(m7mtx);
-        int unregs = 0;
-        for (const auto& q : m7seen)
-            if (q.op == ManageSrv::Request::OP_UNREGISTER)
-                ++unregs;
-        // Two independent rollbacks: unregisterSource's best-effort one AND
-        // the post-response abort path's (J) — both must arrive.
-        return unregs >= 2;
-    }, 5000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            std::lock_guard<std::mutex> lk(m7mtx);
+            int unregs = 0;
+            for (const auto& q : m7seen)
+                if (q.op == ManageSrv::Request::OP_UNREGISTER)
+                    ++unregs;
+            // Two independent rollbacks: unregisterSource's best-effort one AND
+            // the post-response abort path's (J) — both must arrive.
+            return unregs >= 2;
+        },
+        5000));
 }
 
 // M8: notification kinds via a mock master client — STATE observation only;
@@ -564,7 +614,11 @@ TEST_F(ManagerTest, M8_NotificationKinds)
 {
     makeManagers(/*autoRetry=*/true);
     Events ev;
-    mgrA_->setNotificationCallback([&](const auto& e) { ev.push(e); });
+    mgrA_->setNotificationCallback(
+        [&](const auto& e)
+        {
+            ev.push(e);
+        });
 
     const auto i = info("m8", nameB());
     auto r = mgrA_->registerSource(i);
@@ -575,8 +629,8 @@ TEST_F(ManagerTest, M8_NotificationKinds)
 
     auto client = auxNode_->create_client<CsmNotifySrv>(nameA() + "/get_notifications");
     ASSERT_TRUE(client->wait_for_service(3s));
-    auto call = [&](int8_t kind, const std::string& eventId, uint64_t gen,
-                    int8_t health = 0) {
+    auto call = [&](int8_t kind, const std::string& eventId, uint64_t gen, int8_t health = 0)
+    {
         auto rq = std::make_shared<CsmNotifySrv::Request>();
         rq->kind = kind;
         rq->peer_csm_health = health;
@@ -592,36 +646,39 @@ TEST_F(ManagerTest, M8_NotificationKinds)
     const uint64_t gen = st.sources[0].attempt_generation;
 
     // STATE: event only, no state change.
-    EXPECT_EQ(call(CsmNotifySrv::Request::KIND_STATE, "e1", gen),
-              CsmNotifySrv::Response::RESPONSE_APPLIED);
-    EXPECT_TRUE(waitFor([&] {
-        return ev.count(ControlSignalManager::EventKind::PEER_STATE) == 1;
-    }));
+    EXPECT_EQ(call(CsmNotifySrv::Request::KIND_STATE, "e1", gen), CsmNotifySrv::Response::RESPONSE_APPLIED);
+    EXPECT_TRUE(waitFor(
+        [&]
+        {
+            return ev.count(ControlSignalManager::EventKind::PEER_STATE) == 1;
+        }));
     EXPECT_TRUE(r.handle.ready());
 
     // CSM_TIMEOUT warning + recovery: peerHealth only.
-    EXPECT_EQ(call(CsmNotifySrv::Request::KIND_CSM_TIMEOUT, "e2", gen,
-                   CsmNotifySrv::Request::PEER_HEALTH_TIMEOUT),
+    EXPECT_EQ(call(CsmNotifySrv::Request::KIND_CSM_TIMEOUT, "e2", gen, CsmNotifySrv::Request::PEER_HEALTH_TIMEOUT),
               CsmNotifySrv::Response::RESPONSE_APPLIED);
-    EXPECT_EQ(call(CsmNotifySrv::Request::KIND_CSM_TIMEOUT, "e3", gen,
-                   CsmNotifySrv::Request::PEER_HEALTH_ACTIVE),
+    EXPECT_EQ(call(CsmNotifySrv::Request::KIND_CSM_TIMEOUT, "e3", gen, CsmNotifySrv::Request::PEER_HEALTH_ACTIVE),
               CsmNotifySrv::Response::RESPONSE_APPLIED);
-    EXPECT_TRUE(waitFor([&] {
-        return ev.count(ControlSignalManager::EventKind::PEER_CSM_TIMEOUT) == 1 &&
-               ev.count(ControlSignalManager::EventKind::PEER_CSM_ACTIVE) == 1;
-    }));
-    EXPECT_TRUE(r.handle.ready());   // local state untouched
+    EXPECT_TRUE(waitFor(
+        [&]
+        {
+            return ev.count(ControlSignalManager::EventKind::PEER_CSM_TIMEOUT) == 1 &&
+                   ev.count(ControlSignalManager::EventKind::PEER_CSM_ACTIVE) == 1;
+        }));
+    EXPECT_TRUE(r.handle.ready());  // local state untouched
 
     // Old generation -> STALE, nothing changes.
-    EXPECT_EQ(call(CsmNotifySrv::Request::KIND_DISCONNECTED, "e4", gen + 7),
-              CsmNotifySrv::Response::RESPONSE_STALE);
+    EXPECT_EQ(call(CsmNotifySrv::Request::KIND_DISCONNECTED, "e4", gen + 7), CsmNotifySrv::Response::RESPONSE_STALE);
     EXPECT_TRUE(r.handle.ready());
 
     // Matching DISCONNECTED: removal on the next tick, source enters retry.
-    EXPECT_EQ(call(CsmNotifySrv::Request::KIND_DISCONNECTED, "e5", gen),
-              CsmNotifySrv::Response::RESPONSE_APPLIED);
-    ASSERT_TRUE(waitFor([&] { return !r.handle.ready(); }));
-    EXPECT_TRUE(r.handle.valid());   // RETRY_WAIT keeps the intent
+    EXPECT_EQ(call(CsmNotifySrv::Request::KIND_DISCONNECTED, "e5", gen), CsmNotifySrv::Response::RESPONSE_APPLIED);
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return !r.handle.ready();
+        }));
+    EXPECT_TRUE(r.handle.valid());  // RETRY_WAIT keeps the intent
 
     // Resend of the same event: idempotent.
     EXPECT_EQ(call(CsmNotifySrv::Request::KIND_DISCONNECTED, "e5", gen),
@@ -632,9 +689,11 @@ TEST_F(ManagerTest, M8_NotificationKinds)
     auto r2 = mgrA_->registerSource(i2);
     ASSERT_EQ(r2.code, RegisterError::OK);
     ManagerStatusT st2;
-    ASSERT_TRUE(waitFor([&] {
-        return captureStatus(nameA(), st2) && st2.sources.size() == 2;
-    }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return captureStatus(nameA(), st2) && st2.sources.size() == 2;
+        }));
     for (const auto& e : st2.sources)
         if (e.controller_name == i2.controller_name)
         {
@@ -647,11 +706,17 @@ TEST_F(ManagerTest, M8_NotificationKinds)
             ASSERT_EQ(f.wait_for(3s), std::future_status::ready);
             EXPECT_EQ(f.get()->response, CsmNotifySrv::Response::RESPONSE_APPLIED);
         }
-    ASSERT_TRUE(waitFor([&] { return !r2.handle.ready(); }));
-    EXPECT_TRUE(r2.handle.valid());   // RETRY_WAIT: intent kept
-    EXPECT_TRUE(waitFor([&] {
-        return ev.count(ControlSignalManager::EventKind::PAIR_MISSING) >= 1;
-    }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return !r2.handle.ready();
+        }));
+    EXPECT_TRUE(r2.handle.valid());  // RETRY_WAIT: intent kept
+    EXPECT_TRUE(waitFor(
+        [&]
+        {
+            return ev.count(ControlSignalManager::EventKind::PAIR_MISSING) >= 1;
+        }));
 }
 
 // M9: auto-disconnect — the tick decides DISCONNECTED, fires the state
@@ -661,24 +726,35 @@ TEST_F(ManagerTest, M9_AutoDisconnect)
 {
     makeManagers(/*autoRetry=*/true);
     Events ev;
-    mgrA_->setNotificationCallback([&](const auto& e) { ev.push(e); });
-    std::atomic<int> discCb{0};
-    mgrA_->registerSourceStateCallback(
-        ControlSignalState::DISCONNECTED,
-        [&](const std::string&, ControlSignalState, ControlSignalState) {
-            discCb.fetch_add(1);
+    mgrA_->setNotificationCallback(
+        [&](const auto& e)
+        {
+            ev.push(e);
         });
+    std::atomic<int> discCb{0};
+    mgrA_->registerSourceStateCallback(ControlSignalState::DISCONNECTED,
+                                       [&](const std::string&, ControlSignalState, ControlSignalState)
+                                       {
+                                           discCb.fetch_add(1);
+                                       });
 
     auto i = info("m9", nameB(), 100 * kMs, 300 * kMs);
     auto r = mgrA_->registerSource(i);
     ASSERT_EQ(r.code, RegisterError::OK);
     ASSERT_EQ(r.handle.send(makeJoy(1.f)), SendResult::OK);
 
-    ASSERT_TRUE(waitFor([&] { return !r.handle.valid(); }, 5000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return !r.handle.valid();
+        },
+        5000));
     EXPECT_EQ(discCb.load(), 1);
-    EXPECT_TRUE(waitFor([&] {
-        return ev.count(ControlSignalManager::EventKind::LOCAL_DISCONNECTED) >= 1;
-    }));
+    EXPECT_TRUE(waitFor(
+        [&]
+        {
+            return ev.count(ControlSignalManager::EventKind::LOCAL_DISCONNECTED) >= 1;
+        }));
     EXPECT_TRUE(mgrA_->getSourceInfoList().empty());
     EXPECT_EQ(ev.count(ControlSignalManager::EventKind::RETRY_STARTED), 0);
 }
@@ -691,7 +767,12 @@ TEST_F(ManagerTest, M10_HandleAfterRemoval)
     auto r = mgrA_->registerSource(i);
     ASSERT_EQ(r.code, RegisterError::OK);
     ASSERT_EQ(r.handle.send(makeJoy(1.f)), SendResult::OK);
-    ASSERT_TRUE(waitFor([&] { return !r.handle.valid(); }, 5000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return !r.handle.valid();
+        },
+        5000));
 
     EXPECT_EQ(r.handle.send(makeJoy(2.f)), SendResult::DISCONNECTED);
     EXPECT_EQ(r.handle.state(), std::nullopt);
@@ -706,7 +787,7 @@ TEST_F(ManagerTest, M11_Filters)
     makeManagers();
     const auto i = info("m11", nameB());
 
-    mgrA_->enableControllerWhitelist({});   // empty = block all
+    mgrA_->enableControllerWhitelist({});  // empty = block all
     EXPECT_EQ(mgrA_->registerSource(i).code, RegisterError::FILTERED);
     mgrA_->enableControllerWhitelist({i.controller_name});
     mgrA_->enableControllerBlacklist({i.controller_name});
@@ -729,23 +810,43 @@ TEST_F(ManagerTest, M12_TypedCallbacks)
     std::atomic<int> pre{0}, post{0};
     // Order 1: callback registered before the sink exists.
     EXPECT_TRUE(mgrB_->registerCallback<Joy>(
-        [&](const Joy&, const ControlSignalInfo&) { pre.fetch_add(1); }));
+        [&](const Joy&, const ControlSignalInfo&)
+        {
+            pre.fetch_add(1);
+        }));
     EXPECT_FALSE(mgrB_->registerCallback("nope",
-        [](const void*, const ControlSignalInfo&) {}));
+                                         [](const void*, const ControlSignalInfo&)
+                                         {
+                                         }));
 
     const auto i = info("m12", nameB());
     auto r = mgrA_->registerSource(i);
     ASSERT_EQ(r.code, RegisterError::OK);
-    ASSERT_TRUE(waitFor([&] { return mgrB_->getSinkState(i.controller_name).has_value(); }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return mgrB_->getSinkState(i.controller_name).has_value();
+        }));
     ASSERT_EQ(r.handle.send(makeJoy(1.f)), SendResult::OK);
-    ASSERT_TRUE(waitFor([&] { return pre.load() >= 1; }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return pre.load() >= 1;
+        }));
 
     // Order 2 / overwrite: string version replaces the callback.
     EXPECT_TRUE(mgrB_->registerCallback("joy",
-        [&](const void*, const ControlSignalInfo&) { post.fetch_add(1); }));
+                                        [&](const void*, const ControlSignalInfo&)
+                                        {
+                                            post.fetch_add(1);
+                                        }));
     const int preAtSwap = pre.load();
     ASSERT_EQ(r.handle.send(makeJoy(2.f)), SendResult::OK);
-    ASSERT_TRUE(waitFor([&] { return post.load() >= 1; }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return post.load() >= 1;
+        }));
     EXPECT_EQ(pre.load(), preAtSwap);
 
     mgrB_->unregisterCallback("joy");
@@ -770,12 +871,12 @@ TEST_F(ManagerTest, M13_InfoReqAndStatusSnapshot)
     auto f = client->async_send_request(std::make_shared<InfoReqSrv::Request>());
     ASSERT_EQ(f.wait_for(3s), std::future_status::ready);
     const auto res = f.get();
-    ASSERT_EQ(res->source_list.size(), 1u);   // registered only
+    ASSERT_EQ(res->source_list.size(), 1u);  // registered only
     EXPECT_EQ(res->source_list[0].controller_name, ok.controller_name);
 
     ManagerStatusT st;
     ASSERT_TRUE(captureStatus(nameA(), st));
-    ASSERT_EQ(st.sources.size(), 2u);   // full snapshot incl. RETRY_WAIT
+    ASSERT_EQ(st.sources.size(), 2u);  // full snapshot incl. RETRY_WAIT
     bool sawRetryWait = false;
     for (const auto& e : st.sources)
     {
@@ -784,8 +885,7 @@ TEST_F(ManagerTest, M13_InfoReqAndStatusSnapshot)
         EXPECT_EQ(e.source_manager_name, nameA());
         if (e.controller_name == waiting.controller_name)
         {
-            sawRetryWait = e.registration_phase == EntryStatusT::PHASE_RETRY_WAIT &&
-                           !e.endpoint_present;
+            sawRetryWait = e.registration_phase == EntryStatusT::PHASE_RETRY_WAIT && !e.endpoint_present;
         }
     }
     EXPECT_TRUE(sawRetryWait);
@@ -800,12 +900,14 @@ TEST_F(ManagerTest, M14_PreconditionViolations)
     // Inside a ROS callback (the manager's own notification service thread).
     std::atomic<bool> checked{false};
     RegisterError inCbCode{RegisterError::OK};
-    auto sub = nodeA_->create_subscription<Joy>(
-        uid_ + "/m14_trigger", 10, [&](const Joy&) {
-            // Any Manager-owned callback marks the thread; a plain node sub
-            // does not, so call through a service handled by the manager:
-            (void)0;
-        });
+    auto sub = nodeA_->create_subscription<Joy>(uid_ + "/m14_trigger",
+                                                10,
+                                                [&](const Joy&)
+                                                {
+                                                    // Any Manager-owned callback marks the thread; a plain node sub
+                                                    // does not, so call through a service handled by the manager:
+                                                    (void)0;
+                                                });
     // Use the manager's own service path: call get_notifications with a bad
     // instance id — inside that handler the guard is set; but we cannot run
     // user code there. Instead verify the executor-not-ticked variant with a
@@ -816,7 +918,7 @@ TEST_F(ManagerTest, M14_PreconditionViolations)
     const auto r = mgrL.registerSource(info("m14", nameB()));
     const auto elapsed = std::chrono::steady_clock::now() - start;
     EXPECT_EQ(r.code, RegisterError::INVALID_CONTEXT);
-    EXPECT_LE(elapsed, 1s);   // fails fast, no 5 s pseudo-timeout
+    EXPECT_LE(elapsed, 1s);  // fails fast, no 5 s pseudo-timeout
     checked.store(true);
     EXPECT_TRUE(checked.load());
     (void)inCbCode;
@@ -826,16 +928,20 @@ TEST_F(ManagerTest, M14_PreconditionViolations)
     // callback guard must reject the synchronous API immediately.
     std::atomic<bool> cbChecked{false};
     std::atomic<RegisterError> cbCode{RegisterError::OK};
-    mgrA_->registerSourceStateCallback(
-        ControlSignalState::ACTIVE,
-        [&](const std::string&, ControlSignalState, ControlSignalState) {
-            if (!cbChecked.exchange(true))
-                cbCode.store(mgrA_->registerSource(info("m14x", nameB())).code);
-        });
+    mgrA_->registerSourceStateCallback(ControlSignalState::ACTIVE,
+                                       [&](const std::string&, ControlSignalState, ControlSignalState)
+                                       {
+                                           if (!cbChecked.exchange(true))
+                                               cbCode.store(mgrA_->registerSource(info("m14x", nameB())).code);
+                                       });
     auto r14 = mgrA_->registerSource(info("m14b", nameB()));
     ASSERT_EQ(r14.code, RegisterError::OK);
     ASSERT_EQ(r14.handle.send(makeJoy(1.f)), SendResult::OK);
-    ASSERT_TRUE(waitFor([&] { return cbChecked.load(); }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return cbChecked.load();
+        }));
     EXPECT_EQ(cbCode.load(), RegisterError::INVALID_CONTEXT);
     mgrA_->registerSourceStateCallback(ControlSignalState::ACTIVE, nullptr);
 }
@@ -847,7 +953,11 @@ TEST_F(ManagerTest, M15_RetryRebuildSameHandle)
 {
     makeManagers(/*autoRetry=*/true);
     Events ev;
-    mgrA_->setNotificationCallback([&](const auto& e) { ev.push(e); });
+    mgrA_->setNotificationCallback(
+        [&](const auto& e)
+        {
+            ev.push(e);
+        });
 
     const auto i = info("m15", nameB());
     auto r = mgrA_->registerSource(i);
@@ -869,9 +979,18 @@ TEST_F(ManagerTest, M15_RetryRebuildSameHandle)
 
     // Endpoint deregisters, handle stays valid, then recovers via retry
     // (the terminal path's matching UNREGISTER cleared B's old sink).
-    ASSERT_TRUE(waitFor([&] { return !r.handle.ready(); }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return !r.handle.ready();
+        }));
     EXPECT_TRUE(r.handle.valid());
-    ASSERT_TRUE(waitFor([&] { return r.handle.ready(); }, 10000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return r.handle.ready();
+        },
+        10000));
     EXPECT_GE(ev.count(ControlSignalManager::EventKind::RETRY_SUCCEEDED), 1);
     EXPECT_EQ(r.handle.send(makeJoy(1.f)), SendResult::OK);
 }
@@ -888,28 +1007,34 @@ TEST_F(ManagerTest, M16_StatusContent)
     // ~20 Hz sender keeps running while status messages are collected, so
     // the captured snapshot reflects the live rate and ACTIVE state.
     std::atomic<bool> stop{false};
-    std::thread sender([&] {
-        while (!stop.load())
+    std::thread sender(
+        [&]
         {
-            (void)r.handle.send(makeJoy(1.f));
-            std::this_thread::sleep_for(50ms);
-        }
-    });
-    std::this_thread::sleep_for(1500ms);   // let the rate window fill
+            while (!stop.load())
+            {
+                (void)r.handle.send(makeJoy(1.f));
+                std::this_thread::sleep_for(50ms);
+            }
+        });
+    std::this_thread::sleep_for(1500ms);  // let the rate window fill
 
     std::mutex mtx;
     std::vector<std::pair<int64_t, ManagerStatusT>> msgs;
-    auto sub = auxNode_->create_subscription<ManagerStatusT>(
-        nameA() + "/status", 10, [&](const ManagerStatusT& m) {
+    auto sub = auxNode_->create_subscription<ManagerStatusT>(nameA() + "/status",
+                                                             10,
+                                                             [&](const ManagerStatusT& m)
+                                                             {
+                                                                 std::lock_guard<std::mutex> lk(mtx);
+                                                                 msgs.emplace_back(steadyNowNs(), m);
+                                                             });
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
             std::lock_guard<std::mutex> lk(mtx);
-            msgs.emplace_back(steadyNowNs(), m);
-        });
-    ASSERT_TRUE(waitFor([&] {
-        std::lock_guard<std::mutex> lk(mtx);
-        return msgs.size() >= 4;
-    }));
+            return msgs.size() >= 4;
+        }));
     ManagerStatusT stB;
-    ASSERT_TRUE(captureStatus(nameB(), stB));   // captured while still sending
+    ASSERT_TRUE(captureStatus(nameB(), stB));  // captured while still sending
     stop.store(true);
     sender.join();
 
@@ -919,16 +1044,14 @@ TEST_F(ManagerTest, M16_StatusContent)
     EXPECT_EQ(last.sources[0].state, EntryStatusT::STATE_ACTIVE);
     EXPECT_GE(last.sources[0].data_rate_hz, 14.f);
     EXPECT_LE(last.sources[0].data_rate_hz, 26.f);
-    ASSERT_EQ(stB.sinks.size(), 1u);   // sink-side lastStatus rate path
+    ASSERT_EQ(stB.sinks.size(), 1u);  // sink-side lastStatus rate path
     EXPECT_GE(stB.sinks[0].data_rate_hz, 14.f);
     EXPECT_LE(stB.sinks[0].data_rate_hz, 26.f);
     // Publish period ~ statusIntervalMs (100ms; generous CI bounds).
     std::vector<int64_t> gaps;
     for (size_t k = 1; k < msgs.size(); ++k)
         gaps.push_back(msgs[k].first - msgs[k - 1].first);
-    const int64_t avg =
-        std::accumulate(gaps.begin(), gaps.end(), int64_t{0}) /
-        static_cast<int64_t>(gaps.size());
+    const int64_t avg = std::accumulate(gaps.begin(), gaps.end(), int64_t{0}) / static_cast<int64_t>(gaps.size());
     EXPECT_GE(avg, 50 * kMs);
     EXPECT_LE(avg, 300 * kMs);
     // Sequence strictly increasing.
@@ -941,10 +1064,12 @@ TEST_F(ManagerTest, M16_StatusContent)
 TEST_F(ManagerTest, M17_MasterInteraction)
 {
     makeManagers();
-    ASSERT_TRUE(waitFor([&] {
-        std::lock_guard<std::mutex> lk(master_->mtx);
-        return master_->registers.size() >= 2;   // A and B registered
-    }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            std::lock_guard<std::mutex> lk(master_->mtx);
+            return master_->registers.size() >= 2;  // A and B registered
+        }));
     {
         std::lock_guard<std::mutex> lk(master_->mtx);
         bool sawA = false;
@@ -961,35 +1086,56 @@ TEST_F(ManagerTest, M17_MasterInteraction)
         }
         EXPECT_TRUE(sawA);
     }
-    ASSERT_TRUE(waitFor([&] {
-        std::lock_guard<std::mutex> lk(master_->mtx);
-        return master_->heartbeats >= 3;
-    }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            std::lock_guard<std::mutex> lk(master_->mtx);
+            return master_->heartbeats >= 3;
+        }));
     EXPECT_FALSE(mgrA_->isDegraded());
     {
         std::lock_guard<std::mutex> lk(master_->mtx);
         for (const auto& [name, mc] : master_->maxConcurrentPer)
-            EXPECT_LE(mc, 1) << name;   // strictly one in flight per CSM
+            EXPECT_LE(mc, 1) << name;  // strictly one in flight per CSM
     }
 
     // UNKNOWN_CSM: the affected manager re-registers with the same instance.
-    const size_t regBefore = [&] {
+    const size_t regBefore = [&]
+    {
         std::lock_guard<std::mutex> lk(master_->mtx);
         return master_->registers.size();
     }();
     master_->answerUnknownOnce.store(true);
-    ASSERT_TRUE(waitFor([&] {
-        std::lock_guard<std::mutex> lk(master_->mtx);
-        return master_->registers.size() > regBefore;
-    }, 8000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            std::lock_guard<std::mutex> lk(master_->mtx);
+            return master_->registers.size() > regBefore;
+        },
+        8000));
 
     // Silence: no heartbeat responses -> degraded only; entity state and the
     // established pipeline stay untouched.
-    ASSERT_TRUE(waitFor([&] { return !mgrA_->isDegraded(); }, 8000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return !mgrA_->isDegraded();
+        },
+        8000));
     master_->killHeartbeat();
-    ASSERT_TRUE(waitFor([&] { return mgrA_->isDegraded(); }, 8000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return mgrA_->isDegraded();
+        },
+        8000));
     master_->makeHeartbeatService();
-    ASSERT_TRUE(waitFor([&] { return !mgrA_->isDegraded(); }, 8000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return !mgrA_->isDegraded();
+        },
+        8000));
 }
 
 // M18: per-state callbacks for all managed entities — one fire per
@@ -999,50 +1145,67 @@ TEST_F(ManagerTest, M18_PerStateCallbacks)
     makeManagers();
     std::atomic<int> srcTimeout{0}, sinkActive{0};
     std::thread::id srcThread{}, mainThread = std::this_thread::get_id();
-    mgrA_->registerSourceStateCallback(
-        ControlSignalState::TIMEOUT,
-        [&](const std::string&, ControlSignalState oldS, ControlSignalState newS) {
-            EXPECT_EQ(oldS, ControlSignalState::ACTIVE);
-            EXPECT_EQ(newS, ControlSignalState::TIMEOUT);
-            srcThread = std::this_thread::get_id();
-            srcTimeout.fetch_add(1);
-        });
-    mgrB_->registerSinkStateCallback(
-        ControlSignalState::ACTIVE,
-        [&](const std::string&, ControlSignalState oldS, ControlSignalState newS) {
-            EXPECT_NE(oldS, newS);
-            EXPECT_EQ(newS, ControlSignalState::ACTIVE);
-            sinkActive.fetch_add(1);
-        });
+    mgrA_->registerSourceStateCallback(ControlSignalState::TIMEOUT,
+                                       [&](const std::string&, ControlSignalState oldS, ControlSignalState newS)
+                                       {
+                                           EXPECT_EQ(oldS, ControlSignalState::ACTIVE);
+                                           EXPECT_EQ(newS, ControlSignalState::TIMEOUT);
+                                           srcThread = std::this_thread::get_id();
+                                           srcTimeout.fetch_add(1);
+                                       });
+    mgrB_->registerSinkStateCallback(ControlSignalState::ACTIVE,
+                                     [&](const std::string&, ControlSignalState oldS, ControlSignalState newS)
+                                     {
+                                         EXPECT_NE(oldS, newS);
+                                         EXPECT_EQ(newS, ControlSignalState::ACTIVE);
+                                         sinkActive.fetch_add(1);
+                                     });
 
     const auto i = info("m18", nameB(), 250 * kMs, 30'000 * kMs);
     auto r = mgrA_->registerSource(i);
     ASSERT_EQ(r.code, RegisterError::OK);
     ASSERT_EQ(r.handle.send(makeJoy(1.f)), SendResult::OK);
 
-    ASSERT_TRUE(waitFor([&] { return sinkActive.load() >= 1; }));
-    ASSERT_TRUE(waitFor([&] { return srcTimeout.load() >= 1; }, 5000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return sinkActive.load() >= 1;
+        }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return srcTimeout.load() >= 1;
+        },
+        5000));
     EXPECT_EQ(srcTimeout.load(), 1);
-    EXPECT_NE(srcThread, mainThread);   // tick thread, never the caller
+    EXPECT_NE(srcThread, mainThread);  // tick thread, never the caller
 
     // Overwrite: the replacement fires, the old slot holder stays silent.
     std::atomic<int> srcTimeout2{0};
-    mgrA_->registerSourceStateCallback(
-        ControlSignalState::TIMEOUT,
-        [&](const std::string&, ControlSignalState, ControlSignalState) {
-            srcTimeout2.fetch_add(1);
-        });
+    mgrA_->registerSourceStateCallback(ControlSignalState::TIMEOUT,
+                                       [&](const std::string&, ControlSignalState, ControlSignalState)
+                                       {
+                                           srcTimeout2.fetch_add(1);
+                                       });
     ASSERT_EQ(r.handle.send(makeJoy(2.f)), SendResult::OK);
-    ASSERT_TRUE(waitFor([&] { return srcTimeout2.load() >= 1; }, 5000));
-    EXPECT_EQ(srcTimeout.load(), 1);   // the replaced callback never fired again
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return srcTimeout2.load() >= 1;
+        },
+        5000));
+    EXPECT_EQ(srcTimeout.load(), 1);  // the replaced callback never fired again
 
     // nullptr clears: recover then time out again -> no further fire.
     mgrA_->registerSourceStateCallback(ControlSignalState::TIMEOUT, nullptr);
     const int t2AtClear = srcTimeout2.load();
     ASSERT_EQ(r.handle.send(makeJoy(3.f)), SendResult::OK);
-    ASSERT_TRUE(waitFor([&] {
-        return mgrA_->getSourceState(i.controller_name) == ControlSignalState::TIMEOUT;
-    }, 5000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return mgrA_->getSourceState(i.controller_name) == ControlSignalState::TIMEOUT;
+        },
+        5000));
     EXPECT_EQ(srcTimeout.load(), 1);
     EXPECT_EQ(srcTimeout2.load(), t2AtClear);
 }
@@ -1051,20 +1214,25 @@ TEST_F(ManagerTest, M18_PerStateCallbacks)
 // observable intermediate TIMEOUT.
 TEST_F(ManagerTest, M19_DoubleCrossSingleTick)
 {
-    makeManagers(false, 200);   // slow tick
+    makeManagers(false, 200);  // slow tick
     std::atomic<int> timeoutFires{0};
-    mgrA_->registerSourceStateCallback(
-        ControlSignalState::TIMEOUT,
-        [&](const std::string&, ControlSignalState, ControlSignalState) {
-            timeoutFires.fetch_add(1);
-        });
-    auto i = info("m19", nameB(), 60 * kMs, 90 * kMs);   // both < tick period
+    mgrA_->registerSourceStateCallback(ControlSignalState::TIMEOUT,
+                                       [&](const std::string&, ControlSignalState, ControlSignalState)
+                                       {
+                                           timeoutFires.fetch_add(1);
+                                       });
+    auto i = info("m19", nameB(), 60 * kMs, 90 * kMs);  // both < tick period
     auto r = mgrA_->registerSource(i);
     ASSERT_EQ(r.code, RegisterError::OK);
     ASSERT_EQ(r.handle.send(makeJoy(1.f)), SendResult::OK);
 
-    ASSERT_TRUE(waitFor([&] { return !r.handle.valid(); }, 5000));
-    EXPECT_EQ(timeoutFires.load(), 0);   // never saw TIMEOUT
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return !r.handle.valid();
+        },
+        5000));
+    EXPECT_EQ(timeoutFires.load(), 0);  // never saw TIMEOUT
 }
 
 // M20: retry-until-success — an existing same-name entry with a different
@@ -1078,20 +1246,27 @@ TEST_F(ManagerTest, M20_RetryUntilOldGenerationGone)
     ASSERT_EQ(r1.code, RegisterError::OK);
 
     // Second manager, same controller/channel to the same target: conflict.
-    auto mgrA2 = std::make_unique<ControlSignalManager>(auxNode_.get(),
-                                                        "csmA2_" + uid_,
-                                                        makeOptions(true));
-    ASSERT_TRUE(waitFor([&] { return tickObserved(*mgrA2); }));
+    auto mgrA2 = std::make_unique<ControlSignalManager>(auxNode_.get(), "csmA2_" + uid_, makeOptions(true));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return tickObserved(*mgrA2);
+        }));
     auto r2 = mgrA2->registerSource(i);
     ASSERT_EQ(r2.code, RegisterError::RETRY_SCHEDULED);
     EXPECT_TRUE(r2.handle.valid());
     EXPECT_FALSE(r2.handle.ready());
     std::this_thread::sleep_for(400ms);
-    EXPECT_FALSE(r2.handle.ready());   // still blocked by the old identity
+    EXPECT_FALSE(r2.handle.ready());  // still blocked by the old identity
 
     // Old generation leaves via explicit unregister; retry then succeeds.
     ASSERT_TRUE(mgrA_->unregisterSource(r1.handle));
-    ASSERT_TRUE(waitFor([&] { return r2.handle.ready(); }, 10000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return r2.handle.ready();
+        },
+        10000));
     EXPECT_EQ(r2.handle.send(makeJoy(1.f)), SendResult::OK);
 }
 
@@ -1101,23 +1276,29 @@ TEST_F(ManagerTest, M21_CallbackReentry)
 {
     makeManagers(/*autoRetry=*/true);
     std::atomic<int> reentered{0};
-    mgrA_->registerSourceStateCallback(
-        ControlSignalState::ACTIVE,
-        [&](const std::string& ctrl, ControlSignalState, ControlSignalState) {
-            (void)mgrA_->getSourceState(ctrl);
-            (void)mgrA_->getSource(ctrl);
+    mgrA_->registerSourceStateCallback(ControlSignalState::ACTIVE,
+                                       [&](const std::string& ctrl, ControlSignalState, ControlSignalState)
+                                       {
+                                           (void)mgrA_->getSourceState(ctrl);
+                                           (void)mgrA_->getSource(ctrl);
+                                           (void)mgrA_->getSourceInfoList();
+                                           reentered.fetch_add(1);
+                                       });
+    mgrA_->setNotificationCallback(
+        [&](const auto&)
+        {
             (void)mgrA_->getSourceInfoList();
-            reentered.fetch_add(1);
         });
-    mgrA_->setNotificationCallback([&](const auto&) {
-        (void)mgrA_->getSourceInfoList();
-    });
 
     const auto i = info("m21", nameB());
     auto r = mgrA_->registerSource(i);
     ASSERT_EQ(r.code, RegisterError::OK);
     ASSERT_EQ(r.handle.send(makeJoy(1.f)), SendResult::OK);
-    ASSERT_TRUE(waitFor([&] { return reentered.load() >= 1; }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return reentered.load() >= 1;
+        }));
 }
 
 // M22: activity vs terminal-commit race — continued sending cancels the
@@ -1126,11 +1307,11 @@ TEST_F(ManagerTest, M22_ActivityCancelsTerminal)
 {
     makeManagers();
     std::atomic<int> discFires{0};
-    mgrA_->registerSourceStateCallback(
-        ControlSignalState::DISCONNECTED,
-        [&](const std::string&, ControlSignalState, ControlSignalState) {
-            discFires.fetch_add(1);
-        });
+    mgrA_->registerSourceStateCallback(ControlSignalState::DISCONNECTED,
+                                       [&](const std::string&, ControlSignalState, ControlSignalState)
+                                       {
+                                           discFires.fetch_add(1);
+                                       });
     auto i = info("m22", nameB(), 100 * kMs, 250 * kMs);
     auto r = mgrA_->registerSource(i);
     ASSERT_EQ(r.code, RegisterError::OK);
@@ -1145,7 +1326,12 @@ TEST_F(ManagerTest, M22_ActivityCancelsTerminal)
     EXPECT_EQ(discFires.load(), 0);
 
     // Stop: exactly one callback -> shutdown -> removal flow.
-    ASSERT_TRUE(waitFor([&] { return !r.handle.valid(); }, 5000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return !r.handle.valid();
+        },
+        5000));
     EXPECT_EQ(discFires.load(), 1);
 }
 
@@ -1169,13 +1355,13 @@ TEST_F(ManagerTest, M23_StaleControlMessages)
     rq->source_manager_name = nameA();
     rq->source_csm_instance_id = st.sinks[0].source_csm_instance_id;
     rq->registration_id = st.sinks[0].registration_id;
-    rq->attempt_generation = st.sinks[0].attempt_generation + 5;   // wrong gen
+    rq->attempt_generation = st.sinks[0].attempt_generation + 5;  // wrong gen
     rq->info.controller_name = i.controller_name;
     auto f = client->async_send_request(rq);
     ASSERT_EQ(f.wait_for(3s), std::future_status::ready);
     EXPECT_EQ(f.get()->response, ManageSrv::Response::RESPONSE_STALE);
     std::this_thread::sleep_for(200ms);
-    EXPECT_TRUE(mgrB_->getSinkState(i.controller_name).has_value());   // untouched
+    EXPECT_TRUE(mgrB_->getSinkState(i.controller_name).has_value());  // untouched
 
     // Wrong-incarnation CsmNotify at the source side.
     auto nclient = auxNode_->create_client<CsmNotifySrv>(nameA() + "/get_notifications");
@@ -1197,24 +1383,34 @@ TEST_F(ManagerTest, M24_RetryBackoffDedup)
 {
     makeManagers(/*autoRetry=*/true);
     Events ev;
-    mgrA_->setNotificationCallback([&](const auto& e) { ev.push(e); });
+    mgrA_->setNotificationCallback(
+        [&](const auto& e)
+        {
+            ev.push(e);
+        });
 
-    const auto i = info("m24", "void24_" + uid_);   // target never exists
+    const auto i = info("m24", "void24_" + uid_);  // target never exists
     auto r = mgrA_->registerSource(i);
     ASSERT_EQ(r.code, RegisterError::RETRY_SCHEDULED);
 
     // maxInitialAttempts = 3: RETRY_STARTED stops at 3 for an intent that
     // never succeeded.
-    ASSERT_TRUE(waitFor([&] {
-        return ev.count(ControlSignalManager::EventKind::RETRY_STARTED) >= 3;
-    }, 10000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return ev.count(ControlSignalManager::EventKind::RETRY_STARTED) >= 3;
+        },
+        10000));
     std::this_thread::sleep_for(1200ms);
     EXPECT_EQ(ev.count(ControlSignalManager::EventKind::RETRY_STARTED), 3);
     // Cap exhaustion terminates loudly: RETRY_FAILED fired, slot removed,
     // handle dead — no silently starved zombie entry.
-    EXPECT_TRUE(waitFor([&] {
-        return ev.count(ControlSignalManager::EventKind::RETRY_FAILED) >= 3 + 1;
-    }, 5000));   // 3 per-attempt failures + 1 terminal exhaustion event
+    EXPECT_TRUE(waitFor(
+        [&]
+        {
+            return ev.count(ControlSignalManager::EventKind::RETRY_FAILED) >= 3 + 1;
+        },
+        5000));  // 3 per-attempt failures + 1 terminal exhaustion event
     EXPECT_FALSE(r.handle.valid());
     EXPECT_FALSE(mgrA_->getSource(i.controller_name).valid());
 
@@ -1235,7 +1431,11 @@ TEST_F(ManagerTest, M24_RetryBackoffDedup)
     // deregistration order while B is being destroyed -> retries keep firing
     // well past maxInitialAttempts (only success/unregister/permanent stop).
     Events ev2;
-    mgrA_->setNotificationCallback([&](const auto& e) { ev2.push(e); });
+    mgrA_->setNotificationCallback(
+        [&](const auto& e)
+        {
+            ev2.push(e);
+        });
     const auto ie = info("m24b", nameB());
     auto re = mgrA_->registerSource(ie);
     ASSERT_EQ(re.code, RegisterError::OK);
@@ -1247,7 +1447,7 @@ TEST_F(ManagerTest, M24_RetryBackoffDedup)
             mine = e;
     ASSERT_EQ(mine.controller_name, ie.controller_name);
 
-    mgrB_.reset();   // target vanishes
+    mgrB_.reset();  // target vanishes
     auto client = auxNode_->create_client<CsmNotifySrv>(nameA() + "/get_notifications");
     ASSERT_TRUE(client->wait_for_service(3s));
     auto rq = std::make_shared<CsmNotifySrv::Request>();
@@ -1259,9 +1459,12 @@ TEST_F(ManagerTest, M24_RetryBackoffDedup)
     ASSERT_EQ(f.wait_for(3s), std::future_status::ready);
     ASSERT_EQ(f.get()->response, CsmNotifySrv::Response::RESPONSE_APPLIED);
 
-    ASSERT_TRUE(waitFor([&] {
-        return ev2.count(ControlSignalManager::EventKind::RETRY_STARTED) >= 5;
-    }, 15000));   // 5 > maxInitialAttempts(3): the cap does not apply
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return ev2.count(ControlSignalManager::EventKind::RETRY_STARTED) >= 5;
+        },
+        15000));  // 5 > maxInitialAttempts(3): the cap does not apply
     EXPECT_TRUE(re.handle.valid());
 }
 
@@ -1287,24 +1490,32 @@ TEST_F(ManagerTest, M25_ProcessRestart)
     // Restart with a new incarnation; the old sink blocks -> retry; the
     // orphan dies via its own disconnect timeout (its source is gone), the
     // retry then establishes a fresh identity.
-    mgrA_ = std::make_unique<ControlSignalManager>(nodeA_.get(), nameA(),
-                                                   makeOptions(true));
-    ASSERT_TRUE(waitFor([&] { return tickObserved(*mgrA_); }));
+    mgrA_ = std::make_unique<ControlSignalManager>(nodeA_.get(), nameA(), makeOptions(true));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return tickObserved(*mgrA_);
+        }));
     EXPECT_NE(mgrA_->getCsmInstanceId(), oldInstance);
-    EXPECT_TRUE(mgrA_->getSourceInfoList().empty());   // nothing came back
+    EXPECT_TRUE(mgrA_->getSourceInfoList().empty());  // nothing came back
 
     // The orphan (2 s disconnect) is still alive: the collision is
     // guaranteed, the new intent must go through retry (D3).
     auto i2 = info("m25", nameB(), 100 * kMs, 2'000 * kMs);
     auto r2 = mgrA_->registerSource(i2);
     ASSERT_EQ(r2.code, RegisterError::RETRY_SCHEDULED);
-    ASSERT_TRUE(waitFor([&] { return r2.handle.ready(); }, 15000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return r2.handle.ready();
+        },
+        15000));
 
     ManagerStatusT stNew;
     ASSERT_TRUE(captureStatus(nameB(), stNew));
     ASSERT_EQ(stNew.sinks.size(), 1u);
     EXPECT_NE(stNew.sinks[0].source_csm_instance_id,
-              stOld.sinks[0].source_csm_instance_id);   // new identity
+              stOld.sinks[0].source_csm_instance_id);  // new identity
 }
 
 // M26: service response-failure terminal guard — high-frequency failing
@@ -1314,39 +1525,57 @@ TEST_F(ManagerTest, M26_ResponseFailureTerminal)
 {
     makeManagers(/*autoRetry=*/true);
     Events ev;
-    mgrA_->setNotificationCallback([&](const auto& e) { ev.push(e); });
+    mgrA_->setNotificationCallback(
+        [&](const auto& e)
+        {
+            ev.push(e);
+        });
 
     auto i = info("m26", nameB(), 150 * kMs, 600 * kMs, "service");
     auto r = mgrA_->registerSource(i);
     ASSERT_EQ(r.code, RegisterError::OK);
-    ASSERT_TRUE(waitFor([&] { return mgrB_->getSinkState(i.controller_name).has_value(); }));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return mgrB_->getSinkState(i.controller_name).has_value();
+        }));
     ASSERT_EQ(r.handle.send(makeJoy(1.f)), SendResult::OK);
 
     // Kill the serving side entirely: every further send fails while the
     // activity generation keeps moving.
     mgrB_.reset();
     std::atomic<bool> stop{false};
-    std::thread sender([&] {
-        while (!stop.load())
+    std::thread sender(
+        [&]
         {
-            const auto res = r.handle.send(makeJoy(1.f));
-            (void)res;
-            std::this_thread::sleep_for(30ms);
-        }
-    });
+            while (!stop.load())
+            {
+                const auto res = r.handle.send(makeJoy(1.f));
+                (void)res;
+                std::this_thread::sleep_for(30ms);
+            }
+        });
     // Removal happens despite the ongoing sends; the slot survives into
     // RETRY_WAIT (handle valid, not ready).
-    ASSERT_TRUE(waitFor([&] { return !r.handle.ready(); }, 10000));
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return !r.handle.ready();
+        },
+        10000));
     stop.store(true);
     sender.join();
     EXPECT_TRUE(r.handle.valid());
     EXPECT_EQ(r.handle.send(makeJoy(1.f)), SendResult::RETRYING);
-    EXPECT_TRUE(waitFor([&] {
-        return ev.count(ControlSignalManager::EventKind::RETRY_STARTED) >= 1;
-    }, 5000));
+    EXPECT_TRUE(waitFor(
+        [&]
+        {
+            return ev.count(ControlSignalManager::EventKind::RETRY_STARTED) >= 1;
+        },
+        5000));
 }
 
-} // namespace
+}  // namespace
 
 int main(int argc, char** argv)
 {

@@ -26,7 +26,7 @@ namespace r1
 class SourceHandle
 {
 public:
-    SourceHandle() = default;   // empty handle: every operation is inert
+    SourceHandle() = default;  // empty handle: every operation is inert
 
     /// True while the logical intent is still owned by the Manager: the weak
     /// slot locks AND desired is still set (§10.3). A slot momentarily kept
@@ -48,20 +48,18 @@ public:
         if (!slot)
             return false;
         std::shared_lock<std::shared_mutex> lk(slot->slotMtx);
-        return slot->desired && slot->phase == RegistrationPhase::REGISTERED &&
-               slot->endpoint != nullptr;
+        return slot->desired && slot->phase == RegistrationPhase::REGISTERED && slot->endpoint != nullptr;
     }
 
     const std::string& controllerName() const { return controllerName_; }
 
-    SendResult send(const void* msg) = delete;   // type-safe version only:
+    SendResult send(const void* msg) = delete;  // type-safe version only:
 
     /// Forwards to the current endpoint. PENDING / RETRY_WAIT (intent alive,
     /// endpoint absent) -> RETRYING; slot gone or undesired -> DISCONNECTED.
     /// msgType mismatch: assert in debug, SendResult::NO_TRANSPORT in
     /// release (§10.2, H3).
-    template<typename msgT>
-    SendResult send(const msgT& msg)
+    template <typename msgT> SendResult send(const msgT& msg)
     {
         const auto slot = slot_.lock();
         if (!slot)
@@ -94,8 +92,7 @@ public:
         std::shared_ptr<BaseControlSignalSource> ep;
         {
             std::shared_lock<std::shared_mutex> lk(slot->slotMtx);
-            if (!slot->desired || !slot->endpoint ||
-                slot->phase != RegistrationPhase::REGISTERED)
+            if (!slot->desired || !slot->endpoint || slot->phase != RegistrationPhase::REGISTERED)
                 return std::nullopt;
             ep = slot->endpoint;
         }
@@ -116,11 +113,13 @@ public:
 
 private:
     friend class ControlSignalManager;
-    SourceHandle(std::weak_ptr<SourceRegistrationSlot> slot, std::string controller)
-        : slot_(std::move(slot)), controllerName_(std::move(controller))
-    {}
+    SourceHandle(std::weak_ptr<SourceRegistrationSlot> slot, std::string controller) :
+        slot_(std::move(slot)),
+        controllerName_(std::move(controller))
+    {
+    }
 
-    std::weak_ptr<SourceRegistrationSlot> slot_;   // type at namespace scope (§8.2)
+    std::weak_ptr<SourceRegistrationSlot> slot_;  // type at namespace scope (§8.2)
     std::string controllerName_;
 };
 
@@ -131,12 +130,11 @@ public:
 
     bool valid() const { return !endpoint_.expired(); }
 
-    template<typename msgT>
-    bool read(msgT& out) const
+    template <typename msgT> bool read(msgT& out) const
     {
         const auto ep = endpoint_.lock();
         if (!ep)
-            return false;   // expired: inert semantics (§10.3)
+            return false;  // expired: inert semantics (§10.3)
         if (ep->msgType() != std::type_index(typeid(msgT)))
         {
             assert(false && "SinkHandle::read<msgT>: message type mismatch");
@@ -147,8 +145,7 @@ public:
 
     /// Forwards Sink::waitForMessage; expired handle -> immediate false.
     /// Blocking: never call inside a ROS callback (§2.6).
-    template<typename msgT>
-    bool waitForMessage(msgT& out, int64_t timeoutNs = 0) const
+    template <typename msgT> bool waitForMessage(msgT& out, int64_t timeoutNs = 0) const
     {
         const auto ep = endpoint_.lock();
         if (!ep)
@@ -182,14 +179,15 @@ public:
 
 private:
     friend class ControlSignalManager;
-    explicit SinkHandle(std::weak_ptr<BaseControlSignalSink> ep)
-        : endpoint_(std::move(ep))
-    {}
+    explicit SinkHandle(std::weak_ptr<BaseControlSignalSink> ep) :
+        endpoint_(std::move(ep))
+    {
+    }
 
     std::weak_ptr<BaseControlSignalSink> endpoint_;
 };
 
-} // namespace r1
-} // namespace rv2_interfaces
+}  // namespace r1
+}  // namespace rv2_interfaces
 
-#endif // RV2_CONTROL_SIGNAL_TRANSPORT_R1_CONTROL_SIGNAL_HANDLES_H
+#endif  // RV2_CONTROL_SIGNAL_TRANSPORT_R1_CONTROL_SIGNAL_HANDLES_H

@@ -18,5 +18,5 @@ ControlSignalFactory& ControlSignalFactory::Instance()
     return instance;
 }
 
-} // namespace r1
-} // namespace rv2_interfaces
+}  // namespace r1
+}  // namespace rv2_interfaces

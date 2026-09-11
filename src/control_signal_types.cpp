@@ -41,22 +41,9 @@
 // The anonymous namespace inside the macro is intentional — it confines the
 // auto-register struct to this translation unit.
 
-REGISTER_CONTROL_SIGNAL(
-    Joy,
-    "joy",
-    sensor_msgs::msg::Joy,
-    rv2_interfaces::srv::ControlSignalJoy);
+REGISTER_CONTROL_SIGNAL(Joy, "joy", sensor_msgs::msg::Joy, rv2_interfaces::srv::ControlSignalJoy);
 
-REGISTER_CONTROL_SIGNAL(
-    Twist,
-    "twist",
-    geometry_msgs::msg::Twist,
-    rv2_interfaces::srv::ControlSignalTwist);
+REGISTER_CONTROL_SIGNAL(Twist, "twist", geometry_msgs::msg::Twist, rv2_interfaces::srv::ControlSignalTwist);
 
 // String is topic-only — pass void as SrvType.
-REGISTER_CONTROL_SIGNAL(
-    String,
-    "string",
-    std_msgs::msg::String,
-    void);
-
+REGISTER_CONTROL_SIGNAL(String, "string", std_msgs::msg::String, void);

@@ -41,28 +41,32 @@ struct ManagerTestAccess;
 
 inline int64_t steadyNowNs()
 {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(
-               std::chrono::steady_clock::now().time_since_epoch())
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
         .count();
 }
 
 /// Terminal lifecycle routing (§5.2): why a DISCONNECTED decision was made.
-enum class LivenessCause : uint8_t { NONE, INACTIVITY, RESPONSE_FAILURE };
+enum class LivenessCause : uint8_t
+{
+    NONE,
+    INACTIVITY,
+    RESPONSE_FAILURE
+};
 
 struct EntityStatus
 {
     ControlSignalState state;
-    float              rateHz;
+    float rateHz;
 };
 
 /// Internal decision returned by _calcStatus(); the CSM table keeps only
 /// status — the guard tokens are never public (§5.2).
 struct EntityDecision
 {
-    EntityStatus  status;
-    uint64_t      observedActivityGeneration;  // terminal seal validation
-    uint64_t      observedFailureEpoch;        // response-failure terminal validation
-    LivenessCause cause;                       // terminal lifecycle routing
+    EntityStatus status;
+    uint64_t observedActivityGeneration;  // terminal seal validation
+    uint64_t observedFailureEpoch;  // response-failure terminal validation
+    LivenessCause cause;  // terminal lifecycle routing
 };
 
 namespace detail
@@ -76,17 +80,17 @@ namespace detail
 class RateRecorder
 {
 public:
-    explicit RateRecorder(int64_t windowNs)   // from ManagerOptions.rateWindowNs
-        : windowNs_(windowNs)
+    explicit RateRecorder(int64_t windowNs)  // from ManagerOptions.rateWindowNs
+        :
+        windowNs_(windowNs)
     {
         for (auto& b : buckets_)
             b.store(0, std::memory_order_relaxed);
     }
 
-    void record(int64_t nowNs)   // hot path, O(1)
+    void record(int64_t nowNs)  // hot path, O(1)
     {
-        const uint64_t bucketNum =
-            static_cast<uint64_t>(nowNs / (windowNs_ / kBuckets));
+        const uint64_t bucketNum = static_cast<uint64_t>(nowNs / (windowNs_ / kBuckets));
         auto& slot = buckets_[bucketNum % kBuckets];
         uint64_t cur = slot.load(std::memory_order_relaxed);
         for (;;)
@@ -94,17 +98,17 @@ public:
             const uint64_t curNum = cur >> kCountBits;
             uint64_t next;
             if (curNum == bucketNum)
-                next = cur + 1;                              // same bucket: ++count
+                next = cur + 1;  // same bucket: ++count
             else if (curNum < bucketNum)
-                next = (bucketNum << kCountBits) | 1;        // stale slot: restart
+                next = (bucketNum << kCountBits) | 1;  // stale slot: restart
             else
-                return;                                      // newer bucket won: drop
+                return;  // newer bucket won: drop
             if (slot.compare_exchange_weak(cur, next, std::memory_order_relaxed))
                 return;
         }
     }
 
-    float calcHz(int64_t nowNs) const   // cold path, read-only snapshot
+    float calcHz(int64_t nowNs) const  // cold path, read-only snapshot
     {
         const int64_t bucketNs = windowNs_ / kBuckets;
         const uint64_t curNum = static_cast<uint64_t>(nowNs / bucketNs);
@@ -121,8 +125,7 @@ public:
         // plus the elapsed fraction of the current one — a steady rate then
         // reads true instead of being diluted by the partial bucket.
         const float fracNs = static_cast<float>(nowNs % bucketNs);
-        const float coveredNs =
-            static_cast<float>(bucketNs) * (kBuckets - 1) + fracNs;
+        const float coveredNs = static_cast<float>(bucketNs) * (kBuckets - 1) + fracNs;
         if (coveredNs <= 0.f)
             return 0.f;
         return static_cast<float>(total) / (coveredNs / 1e9f);
@@ -130,48 +133,51 @@ public:
 
 private:
     static constexpr unsigned kBuckets = 8;
-    static constexpr unsigned kCountBits = 20;               // ~1M records per bucket
+    static constexpr unsigned kCountBits = 20;  // ~1M records per bucket
     static constexpr uint64_t kCountMask = (uint64_t{1} << kCountBits) - 1;
 
-    std::array<std::atomic<uint64_t>, kBuckets> buckets_;    // packed number+count
+    std::array<std::atomic<uint64_t>, kBuckets> buckets_;  // packed number+count
     const int64_t windowNs_;
 };
 
 /// Transport pointer traits: service mode with srvT = void degenerates to
 /// std::monostate (rv2 heritage).
-template<typename srvT>
-struct ClientPtrOf { using type = typename rclcpp::Client<srvT>::SharedPtr; };
-template<>
-struct ClientPtrOf<void> { using type = std::monostate; };
+template <typename srvT> struct ClientPtrOf
+{
+    using type = typename rclcpp::Client<srvT>::SharedPtr;
+};
+template <> struct ClientPtrOf<void>
+{
+    using type = std::monostate;
+};
 
-} // namespace detail
+}  // namespace detail
 
 /// SendResult replaces rv2's (bool return + bool& cmdSuccess) dual output.
 enum class SendResult : uint8_t
 {
-    OK,              // published (topic) / accepted (service)
-    REJECTED,        // service peer answered non-SUCCESS
-    NO_TRANSPORT,    // transport unavailable / already shut down
-    TIMEOUT,         // service response timed out
-    DISCONNECTED,    // endpoint terminally sealed / locally deregistered
-    RETRYING,        // logical intent alive, endpoint absent, CSM retrying
+    OK,  // published (topic) / accepted (service)
+    REJECTED,  // service peer answered non-SUCCESS
+    NO_TRANSPORT,  // transport unavailable / already shut down
+    TIMEOUT,  // service response timed out
+    DISCONNECTED,  // endpoint terminally sealed / locally deregistered
+    RETRYING,  // logical intent alive, endpoint absent, CSM retrying
     INVALID_CONTEXT  // service send without a serviceable executor / from callback
 };
 
 /// Per-state transition callback signature (§5.2).
-using StateCb = std::function<void(const std::string& controllerName,
-                                   ControlSignalState oldState,
-                                   ControlSignalState newState)>;
+using StateCb =
+    std::function<void(const std::string& controllerName, ControlSignalState oldState, ControlSignalState newState)>;
 
 class BaseControlSignalSource
 {
 public:
     virtual ~BaseControlSignalSource() = default;
-    virtual ControlSignalState getState() const = 0;     // last tick result only
+    virtual ControlSignalState getState() const = 0;  // last tick result only
     virtual const ControlSignalInfo& getInfo() const = 0;
     virtual std::type_index msgType() const = 0;
     virtual SendResult sendErased(const void* msg) = 0;
-    virtual void shutdown() = 0;                          // release rclcpp entities; idempotent
+    virtual void shutdown() = 0;  // release rclcpp entities; idempotent
 
 protected:
     BaseControlSignalSource() = default;
@@ -181,21 +187,20 @@ private:
     friend struct ManagerTestAccess;
     virtual EntityDecision _calcStatus(int64_t nowNs) const = 0;
     virtual bool _trySealLocalTerminal(const EntityDecision& decision) = 0;
-    virtual void _sealTerminal() = 0;                     // forced / matching lifecycle command
+    virtual void _sealTerminal() = 0;  // forced / matching lifecycle command
     virtual void _applyStatus(const EntityDecision& decision) = 0;
     /// Manager-side fan-out of the global per-state callback registration
     /// (§8.2 registerSourceStateCallback) onto the endpoint's slot array.
     virtual void _setStateCallbackErased(ControlSignalState s, StateCb cb) = 0;
 };
 
-template<typename msgT, typename srvT = void>
-class ControlSignalSource
-    : public BaseControlSignalSource,
-      public std::enable_shared_from_this<ControlSignalSource<msgT, srvT>>
+template <typename msgT, typename srvT = void>
+class ControlSignalSource : public BaseControlSignalSource,
+                            public std::enable_shared_from_this<ControlSignalSource<msgT, srvT>>
 {
     friend class ControlSignalManager;
-    friend class ControlSignalFactory;   // creator lambda
-    friend struct ManagerTestAccess;     // test channel (§5.4; test target only)
+    friend class ControlSignalFactory;  // creator lambda
+    friend struct ManagerTestAccess;  // test channel (§5.4; test target only)
 
 public:
     ~ControlSignalSource() override { shutdown(); }
@@ -209,13 +214,13 @@ public:
 
         const int64_t now = steadyNowNs();
         if (!liveness_.recordActivity(now))
-            return SendResult::DISCONNECTED;   // sealed: must not touch transport
+            return SendResult::DISCONNECTED;  // sealed: must not touch transport
         rate_.record(now);
 
         if (info_.mode == ControlSignalInfo::MODE_SERVICE)
         {
             if constexpr (std::is_void_v<srvT>)
-                return SendResult::NO_TRANSPORT;   // topic-only type (§7)
+                return SendResult::NO_TRANSPORT;  // topic-only type (§7)
             else
                 return _sendService(msg);
         }
@@ -232,29 +237,26 @@ public:
         return SendResult::OK;
     }
 
-    float sendRateHz() const   // cached only, never triggers a computation
+    float sendRateHz() const  // cached only, never triggers a computation
     {
         return cachedRateHz_.load(std::memory_order_relaxed);
     }
 
-    EntityStatus getStatus() const   // {state, cachedRate} combined query
+    EntityStatus getStatus() const  // {state, cachedRate} combined query
     {
         return {liveness_.state(), cachedRateHz_.load(std::memory_order_relaxed)};
     }
 
     ControlSignalState getState() const override
     {
-        return liveness_.state();    // advanced by the CSM tick (§8.3)
+        return liveness_.state();  // advanced by the CSM tick (§8.3)
     }
 
     const ControlSignalInfo& getInfo() const override { return info_; }
 
     std::type_index msgType() const override { return typeid(msgT); }
 
-    SendResult sendErased(const void* msg) override
-    {
-        return send(*static_cast<const msgT*>(msg));
-    }
+    SendResult sendErased(const void* msg) override { return send(*static_cast<const msgT*>(msg)); }
 
     /// Install / replace the per-state transition callback slot; nullptr
     /// clears. Fired from the tick thread only (§5.3).
@@ -265,13 +267,9 @@ public:
     }
 
 private:
-    void _setStateCallbackErased(ControlSignalState s, StateCb cb) override
-    {
-        setStateCallback(s, std::move(cb));
-    }
+    void _setStateCallbackErased(ControlSignalState s, StateCb cb) override { setStateCallback(s, std::move(cb)); }
 
 public:
-
     /// Idempotent: sets the flag, then resets transport under the same lock
     /// used by the send snapshot, so no data race with in-flight sends. An
     /// operation that already linearized (holds its snapshot) may finish;
@@ -280,7 +278,7 @@ public:
     {
         shutdown_.store(true, std::memory_order_release);
         std::lock_guard<std::mutex> lk(transportMtx_);
-        transport_ = TransportVariant{};   // resets to a null PubPtr
+        transport_ = TransportVariant{};  // resets to a null PubPtr
     }
 
 private:
@@ -293,17 +291,15 @@ private:
     /// private! Only the Manager, the Factory creator and ManagerTestAccess
     /// construct instances (§5.1). rateWindowNs comes from
     /// ManagerOptions.rateWindowNs (default 1 s).
-    ControlSignalSource(rclcpp::Node* node, const ControlSignalInfo& info,
-                        int64_t rateWindowNs = 1'000'000'000)
-        : node_(node)
-        , info_(info)
-        , liveness_(steadyNowNs())
-        , rate_(rateWindowNs)
+    ControlSignalSource(rclcpp::Node* node, const ControlSignalInfo& info, int64_t rateWindowNs = 1'000'000'000) :
+        node_(node),
+        info_(info),
+        liveness_(steadyNowNs()),
+        rate_(rateWindowNs)
     {
         if (info_.mode == ControlSignalInfo::MODE_TOPIC)
         {
-            transport_ = node_->create_publisher<msgT>(info_.channel_name,
-                                                       rclcpp::QoS(10));
+            transport_ = node_->create_publisher<msgT>(info_.channel_name, rclcpp::QoS(10));
         }
         else if constexpr (!std::is_void_v<srvT>)
         {
@@ -311,12 +307,10 @@ private:
         }
     }
 
-    template<typename T = srvT>
-    SendResult _sendService(const msgT& msg)
+    template <typename T = srvT> SendResult _sendService(const msgT& msg)
     {
         static_assert(!std::is_void_v<T>, "service mode requires a srv type");
-        const uint64_t seq =
-            nextRequestSequence_.fetch_add(1, std::memory_order_relaxed);
+        const uint64_t seq = nextRequestSequence_.fetch_add(1, std::memory_order_relaxed);
 
         typename rclcpp::Client<T>::SharedPtr client;
         {
@@ -336,10 +330,9 @@ private:
 
         // No hidden fallback: timeout_ns is mandatory in service mode (§3.2
         // rule 5) and used directly (§5.3).
-        if (future.wait_for(std::chrono::nanoseconds(info_.timeout_ns)) !=
-            std::future_status::ready)
+        if (future.wait_for(std::chrono::nanoseconds(info_.timeout_ns)) != std::future_status::ready)
         {
-            client->remove_pending_request(future);   // rv2 audit: pending leak
+            client->remove_pending_request(future);  // rv2 audit: pending leak
             _recordOutcomeFailure(seq, steadyNowNs());
             return SendResult::TIMEOUT;
         }
@@ -349,10 +342,8 @@ private:
         // transport is alive: clear the streak first, then record activity.
         _recordOutcomeSuccess(seq);
         if (!liveness_.recordActivity(steadyNowNs()))
-            return SendResult::DISCONNECTED;          // seal won meanwhile
-        return response->response == T::Response::SRV_RES_SUCCESS
-                   ? SendResult::OK
-                   : SendResult::REJECTED;
+            return SendResult::DISCONNECTED;  // seal won meanwhile
+        return response->response == T::Response::SRV_RES_SUCCESS ? SendResult::OK : SendResult::REJECTED;
     }
 
     /// Only an outcome newer than latestOutcomeRequest may update the streak,
@@ -368,7 +359,7 @@ private:
         {
             responseHealth_.failing = true;
             responseHealth_.failureSinceNs = nowNs;
-            ++responseHealth_.failureEpoch;   // healthy -> failure transition only
+            ++responseHealth_.failureEpoch;  // healthy -> failure transition only
         }
     }
 
@@ -381,7 +372,7 @@ private:
         if (responseHealth_.failing)
         {
             responseHealth_.failing = false;
-            ++responseHealth_.failureEpoch;   // failure -> healthy transition only
+            ++responseHealth_.failureEpoch;  // failure -> healthy transition only
         }
     }
 
@@ -389,10 +380,14 @@ private:
     {
         switch (s)
         {
-            case ControlSignalState::DISCONNECTED: return 3;
-            case ControlSignalState::TIMEOUT:      return 2;
-            case ControlSignalState::ACTIVE:       return 1;
-            case ControlSignalState::INITIAL:      return 0;
+        case ControlSignalState::DISCONNECTED:
+            return 3;
+        case ControlSignalState::TIMEOUT:
+            return 2;
+        case ControlSignalState::ACTIVE:
+            return 1;
+        case ControlSignalState::INITIAL:
+            return 0;
         }
         return 0;
     }
@@ -403,13 +398,11 @@ private:
     EntityDecision _calcStatus(int64_t nowNs) const override
     {
         const float hz = rate_.calcHz(nowNs);
-        const LivenessDecision base =
-            liveness_.calcState(nowNs, info_.timeout_ns, info_.disconnect_timeout_ns);
+        const LivenessDecision base = liveness_.calcState(nowNs, info_.timeout_ns, info_.disconnect_timeout_ns);
 
         ControlSignalState state = base.state;
         LivenessCause cause =
-            state == ControlSignalState::DISCONNECTED ? LivenessCause::INACTIVITY
-                                                      : LivenessCause::NONE;
+            state == ControlSignalState::DISCONNECTED ? LivenessCause::INACTIVITY : LivenessCause::NONE;
         uint64_t epoch = 0;
 
         if (info_.mode == ControlSignalInfo::MODE_SERVICE)
@@ -426,8 +419,7 @@ private:
                 // DISCONNECTED only past the disconnect threshold (0 = that
                 // layer disabled, variant B — TIMEOUT is then its maximum).
                 ControlSignalState rhState = ControlSignalState::TIMEOUT;
-                if (info_.disconnect_timeout_ns > 0 &&
-                    nowNs - rh.failureSinceNs > info_.disconnect_timeout_ns)
+                if (info_.disconnect_timeout_ns > 0 && nowNs - rh.failureSinceNs > info_.disconnect_timeout_ns)
                     rhState = ControlSignalState::DISCONNECTED;
 
                 if (_severity(rhState) > _severity(state))
@@ -455,8 +447,7 @@ private:
         if (decision.cause == LivenessCause::RESPONSE_FAILURE)
         {
             std::lock_guard<std::mutex> lk(responseMtx_);
-            if (!responseHealth_.failing ||
-                responseHealth_.failureEpoch != decision.observedFailureEpoch)
+            if (!responseHealth_.failing || responseHealth_.failureEpoch != decision.observedFailureEpoch)
                 return false;
             liveness_.sealActivity();
             return true;
@@ -484,34 +475,34 @@ private:
             cb(info_.controller_name, old, decision.status.state);
     }
 
-    rclcpp::Node*                node_;
-    ControlSignalInfo            info_;
-    mutable std::mutex           transportMtx_;   // guards transport_ snapshot / reset only
-    TransportVariant             transport_;
-    LivenessState                liveness_;
-    std::atomic<bool>            shutdown_{false};
+    rclcpp::Node* node_;
+    ControlSignalInfo info_;
+    mutable std::mutex transportMtx_;  // guards transport_ snapshot / reset only
+    TransportVariant transport_;
+    LivenessState liveness_;
+    std::atomic<bool> shutdown_{false};
 
-    detail::RateRecorder         rate_;           // send-call rolling window (§5.2)
-    std::atomic<float>           cachedRateHz_{0.f};   // written by _applyStatus()
+    detail::RateRecorder rate_;  // send-call rolling window (§5.2)
+    std::atomic<float> cachedRateHz_{0.f};  // written by _applyStatus()
 
     /// Service response-health record (§5.2); the short lock is negligible
     /// next to a service call's cost.
     struct ResponseHealth
     {
         uint64_t latestOutcomeRequest{0};
-        bool     failing{false};
-        int64_t  failureSinceNs{0};   // streak start while failing == true
-        uint64_t failureEpoch{0};     // bumps only on streak start / clear
+        bool failing{false};
+        int64_t failureSinceNs{0};  // streak start while failing == true
+        uint64_t failureEpoch{0};  // bumps only on streak start / clear
     };
-    std::atomic<uint64_t>        nextRequestSequence_{1};
-    mutable std::mutex           responseMtx_;
-    ResponseHealth               responseHealth_;
+    std::atomic<uint64_t> nextRequestSequence_{1};
+    mutable std::mutex responseMtx_;
+    ResponseHealth responseHealth_;
 
-    std::array<StateCb, 4>       stateCbs_;       // per-state slots (§5.2)
-    mutable std::shared_mutex    stateCbMtx_;
+    std::array<StateCb, 4> stateCbs_;  // per-state slots (§5.2)
+    mutable std::shared_mutex stateCbMtx_;
 };
 
-} // namespace r1
-} // namespace rv2_interfaces
+}  // namespace r1
+}  // namespace rv2_interfaces
 
-#endif // RV2_CONTROL_SIGNAL_TRANSPORT_R1_CONTROL_SIGNAL_SOURCE_H
+#endif  // RV2_CONTROL_SIGNAL_TRANSPORT_R1_CONTROL_SIGNAL_SOURCE_H

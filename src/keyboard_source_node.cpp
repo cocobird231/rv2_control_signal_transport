@@ -80,57 +80,55 @@
 #include <thread>
 #include <memory>
 
-
-using Joy   = sensor_msgs::msg::Joy;
+using Joy = sensor_msgs::msg::Joy;
 using Twist = geometry_msgs::msg::Twist;
 namespace CSC = rv2_interfaces::msg;
 
 using rv2_interfaces::ControlSignalManager;
 using rv2_transport::Key;
-using rv2_transport::KeyEvent;
 using rv2_transport::KeyboardHandler;
-
+using rv2_transport::KeyEvent;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-static constexpr std::size_t JOY_AXES    = 4;   // [fwd, bck, left, right]
+static constexpr std::size_t JOY_AXES = 4;  // [fwd, bck, left, right]
 static constexpr std::size_t JOY_BUTTONS = 12;  // index up to [11]
-
 
 class KeyboardSourceNode : public rclcpp::Node
 {
 public:
-    explicit KeyboardSourceNode(const rclcpp::NodeOptions & options)
-        : Node("keyboard_source", options)
+    explicit KeyboardSourceNode(const rclcpp::NodeOptions& options) :
+        Node("keyboard_source", options)
     {
         // ── Declare & read parameters ─────────────────────────────────────────
-        declare_parameter<std::string>("server_name",                 "control_server");
-        declare_parameter<std::string>("csm_name",                     "keyboard_source");
-        declare_parameter<std::string>("channel_name",                 "keyboard_control");
-        declare_parameter<int64_t>    ("priority",                     50LL);
-        declare_parameter<int64_t>    ("timeout_ms",                   2000LL);
-        declare_parameter<int64_t>    ("disconnect_timeout_ms",        10000LL);
-        declare_parameter<std::string>("initial_msg_type",             "joy");
-        declare_parameter<double>     ("max_setpoint_linear",          1.0);
-        declare_parameter<double>     ("max_setpoint_angular",         1.0);
-        declare_parameter<double>     ("ramp_step_linear",             0.05);
-        declare_parameter<double>     ("ramp_step_angular",            0.05);
-        declare_parameter<int64_t>    ("send_rate_ms",                 100LL);
-        declare_parameter<int64_t>    ("csm_status_timer_interval_ms", 1000LL);
-        declare_parameter<std::string>("keyboard_device",              "");  // "" = auto-detect, "stdin"/"tty" = force stdin, "/dev/input/eventX" = force evdev
+        declare_parameter<std::string>("server_name", "control_server");
+        declare_parameter<std::string>("csm_name", "keyboard_source");
+        declare_parameter<std::string>("channel_name", "keyboard_control");
+        declare_parameter<int64_t>("priority", 50LL);
+        declare_parameter<int64_t>("timeout_ms", 2000LL);
+        declare_parameter<int64_t>("disconnect_timeout_ms", 10000LL);
+        declare_parameter<std::string>("initial_msg_type", "joy");
+        declare_parameter<double>("max_setpoint_linear", 1.0);
+        declare_parameter<double>("max_setpoint_angular", 1.0);
+        declare_parameter<double>("ramp_step_linear", 0.05);
+        declare_parameter<double>("ramp_step_angular", 0.05);
+        declare_parameter<int64_t>("send_rate_ms", 100LL);
+        declare_parameter<int64_t>("csm_status_timer_interval_ms", 1000LL);
+        declare_parameter<std::string>(
+            "keyboard_device", "");  // "" = auto-detect, "stdin"/"tty" = force stdin, "/dev/input/eventX" = force evdev
 
-        serverName_         = get_parameter("server_name").as_string();
-        csmName_            = get_parameter("csm_name").as_string();
-        priority_           = static_cast<int8_t>(get_parameter("priority").as_int());
-        timeoutNs_          = get_parameter("timeout_ms").as_int() * 1'000'000LL;
-        disconnectTimeoutNs_= get_parameter("disconnect_timeout_ms").as_int() * 1'000'000LL;
-        maxSetpointLinear_  = get_parameter("max_setpoint_linear").as_double();
+        serverName_ = get_parameter("server_name").as_string();
+        csmName_ = get_parameter("csm_name").as_string();
+        priority_ = static_cast<int8_t>(get_parameter("priority").as_int());
+        timeoutNs_ = get_parameter("timeout_ms").as_int() * 1'000'000LL;
+        disconnectTimeoutNs_ = get_parameter("disconnect_timeout_ms").as_int() * 1'000'000LL;
+        maxSetpointLinear_ = get_parameter("max_setpoint_linear").as_double();
         maxSetpointAngular_ = get_parameter("max_setpoint_angular").as_double();
-        rampStepLinear_     = get_parameter("ramp_step_linear").as_double();
-        rampStepAngular_    = get_parameter("ramp_step_angular").as_double();
-        sendRateMs_         = get_parameter("send_rate_ms").as_int();
+        rampStepLinear_ = get_parameter("ramp_step_linear").as_double();
+        rampStepAngular_ = get_parameter("ramp_step_angular").as_double();
+        sendRateMs_ = get_parameter("send_rate_ms").as_int();
         const int64_t csmStatusTimerMs = get_parameter("csm_status_timer_interval_ms").as_int();
-        keyboardDevice_     = get_parameter("keyboard_device").as_string();
+        keyboardDevice_ = get_parameter("keyboard_device").as_string();
 
         // Derive send_freq_hz from send_rate_ms (0 disables frequency checking).
         sendFreqHz_ = (sendRateMs_ > 0) ? (1000.0f / static_cast<float>(sendRateMs_)) : 0.0f;
@@ -151,12 +149,16 @@ public:
         // (otherwise the response callback can never be dispatched).
         // We use a 500 ms timer to ensure the executor is spinning, then move
         // the blocking work to a dedicated std::thread.
-        initTimer_ = create_wall_timer(
-            std::chrono::milliseconds(500),
-            [this]() {
-                initTimer_->cancel();
-                initThread_ = std::thread([this]() { _init(); });
-            });
+        initTimer_ = create_wall_timer(std::chrono::milliseconds(500),
+                                       [this]()
+                                       {
+                                           initTimer_->cancel();
+                                           initThread_ = std::thread(
+                                               [this]()
+                                               {
+                                                   _init();
+                                               });
+                                       });
     }
 
     ~KeyboardSourceNode()
@@ -173,57 +175,65 @@ private:
 
     void _init()
     {
-        const std::string type = isJoy_
-            ? CSC::ControlSignalConst::CONTROL_SIGNAL_TYPE_JOY
-            : CSC::ControlSignalConst::CONTROL_SIGNAL_TYPE_TWIST;
+        const std::string type = isJoy_ ? CSC::ControlSignalConst::CONTROL_SIGNAL_TYPE_JOY
+                                        : CSC::ControlSignalConst::CONTROL_SIGNAL_TYPE_TWIST;
 
-        if (!_registerSource(channel_, type)) {
+        if (!_registerSource(channel_, type))
+        {
             RCLCPP_ERROR(get_logger(),
-                "[KBD] Failed to register %s source with server '%s'. Aborting.",
-                type.c_str(), serverName_.c_str());
+                         "[KBD] Failed to register %s source with server '%s'. Aborting.",
+                         type.c_str(),
+                         serverName_.c_str());
             return;
         }
 
         // Periodic send timer.
-        sendTimer_ = create_wall_timer(
-            std::chrono::milliseconds(sendRateMs_),
-            [this]() { _sendTimerCb(); });
+        sendTimer_ = create_wall_timer(std::chrono::milliseconds(sendRateMs_),
+                                       [this]()
+                                       {
+                                           _sendTimerCb();
+                                       });
 
         // Start keyboard reader — must be after other setup.
         keyboard_ = std::make_unique<KeyboardHandler>(
-            [this](Key k, KeyEvent e) { _onKey(k, e); },
+            [this](Key k, KeyEvent e)
+            {
+                _onKey(k, e);
+            },
             keyboardDevice_);
 
         RCLCPP_INFO(get_logger(),
-            "[KBD] Ready. Mode: %s  channel: '%s'  input: %s",
-            isJoy_ ? "Joy" : "Twist", channel_.c_str(),
-            keyboardDevice_.empty() ? "(auto-detect)" : keyboardDevice_.c_str());
+                    "[KBD] Ready. Mode: %s  channel: '%s'  input: %s",
+                    isJoy_ ? "Joy" : "Twist",
+                    channel_.c_str(),
+                    keyboardDevice_.empty() ? "(auto-detect)" : keyboardDevice_.c_str());
         _printHelp();
     }
 
-    bool _registerSource(const std::string & channel, const std::string & type)
+    bool _registerSource(const std::string& channel, const std::string& type)
     {
         CSC::ControlSignalInfo info;
-        info.target_csm_name        = serverName_;
-        info.control_signal_mode    = CSC::ControlSignalConst::CONTROL_SIGNAL_MODE_TOPIC;
-        info.control_signal_type    = type;
-        info.channel_name           = channel;
-        info.send_freq_hz           = sendFreqHz_;
-        info.timeout_ns             = timeoutNs_;
-        info.disconnect_timeout_ns  = disconnectTimeoutNs_;
-        info.use_keep_alive         = false;
+        info.target_csm_name = serverName_;
+        info.control_signal_mode = CSC::ControlSignalConst::CONTROL_SIGNAL_MODE_TOPIC;
+        info.control_signal_type = type;
+        info.channel_name = channel;
+        info.send_freq_hz = sendFreqHz_;
+        info.timeout_ns = timeoutNs_;
+        info.disconnect_timeout_ns = disconnectTimeoutNs_;
+        info.use_keep_alive = false;
         info.keep_alive_interval_ns = 0;
-        info.priority               = priority_;
+        info.priority = priority_;
 
         const bool ok = csm_->registerSource(info, /*timeoutMs=*/5000);
         if (ok)
             RCLCPP_INFO(get_logger(),
-                "[KBD] Registered %-6s source: ch='%s' → server='%s'",
-                type.c_str(), channel.c_str(), serverName_.c_str());
+                        "[KBD] Registered %-6s source: ch='%s' → server='%s'",
+                        type.c_str(),
+                        channel.c_str(),
+                        serverName_.c_str());
         else
-            RCLCPP_WARN(get_logger(),
-                "[KBD] Could not register %s source with server '%s'",
-                type.c_str(), serverName_.c_str());
+            RCLCPP_WARN(
+                get_logger(), "[KBD] Could not register %s source with server '%s'", type.c_str(), serverName_.c_str());
         return ok;
     }
 
@@ -232,8 +242,10 @@ private:
     // Helper: ramp `current` toward `target` by `step` (works for any sign).
     static double rampToward(double current, double target, double step)
     {
-        if (current < target) return std::min(current + step, target);
-        if (current > target) return std::max(current - step, target);
+        if (current < target)
+            return std::min(current + step, target);
+        if (current > target)
+            return std::max(current - step, target);
         return current;
     }
 
@@ -241,9 +253,11 @@ private:
     {
         bool cmdOk = false;
         auto base = csm_->getSource(channel_);
-        if (!base) return;
+        if (!base)
+            return;
 
-        if (isJoy_) {
+        if (isJoy_)
+        {
             Joy msg;
             {
                 std::lock_guard<std::mutex> lk(stateMtx_);
@@ -254,45 +268,47 @@ private:
                 const auto stepL = static_cast<float>(rampStepLinear_);
                 const auto stepA = static_cast<float>(rampStepAngular_);
 
-                joyAxes_[0] = static_cast<float>(rampToward(joyAxes_[0], fwdPressed_   ? maxL : 0.0f, stepL));
-                joyAxes_[1] = static_cast<float>(rampToward(joyAxes_[1], bckPressed_   ? maxL : 0.0f, stepL));
-                joyAxes_[2] = static_cast<float>(rampToward(joyAxes_[2], leftPressed_  ? maxA : 0.0f, stepA));
+                joyAxes_[0] = static_cast<float>(rampToward(joyAxes_[0], fwdPressed_ ? maxL : 0.0f, stepL));
+                joyAxes_[1] = static_cast<float>(rampToward(joyAxes_[1], bckPressed_ ? maxL : 0.0f, stepL));
+                joyAxes_[2] = static_cast<float>(rampToward(joyAxes_[2], leftPressed_ ? maxA : 0.0f, stepA));
                 joyAxes_[3] = static_cast<float>(rampToward(joyAxes_[3], rightPressed_ ? maxA : 0.0f, stepA));
 
                 msg.axes.assign(joyAxes_.begin(), joyAxes_.end());
-                if (joyHeldCmdKey_ != Key::UNKNOWN) {
+                if (joyHeldCmdKey_ != Key::UNKNOWN)
+                {
                     // Command held — keep sending the button state unchanged.
                     msg.buttons.assign(joyButtons_.begin(), joyButtons_.end());
-                } else {
+                }
+                else
+                {
                     msg.buttons.assign(JOY_BUTTONS, 0);
                 }
             }
             base->sendErased(&msg, cmdOk);
-
-        } else {
+        }
+        else
+        {
             Twist msg;
             {
                 std::lock_guard<std::mutex> lk(stateMtx_);
 
                 // Compute per-axis targets from held movement keys.
                 const double targetLinX =
-                    (fwdPressed_ ? maxSetpointLinear_ : 0.0) -
-                    (bckPressed_ ? maxSetpointLinear_ : 0.0);
+                    (fwdPressed_ ? maxSetpointLinear_ : 0.0) - (bckPressed_ ? maxSetpointLinear_ : 0.0);
                 const double targetLinY =
-                    (qPressed_           ? maxSetpointLinear_ : 0.0) -
-                    (strafeRightPressed_ ? maxSetpointLinear_ : 0.0);
+                    (qPressed_ ? maxSetpointLinear_ : 0.0) - (strafeRightPressed_ ? maxSetpointLinear_ : 0.0);
                 const double targetAngZ =
-                    (leftPressed_  ? maxSetpointAngular_ : 0.0) -
-                    (rightPressed_ ? maxSetpointAngular_ : 0.0);
+                    (leftPressed_ ? maxSetpointAngular_ : 0.0) - (rightPressed_ ? maxSetpointAngular_ : 0.0);
 
                 twistLinX_ = rampToward(twistLinX_, targetLinX, rampStepLinear_);
                 twistLinY_ = rampToward(twistLinY_, targetLinY, rampStepLinear_);
                 twistAngZ_ = rampToward(twistAngZ_, targetAngZ, rampStepAngular_);
 
-                msg.linear.x  = twistLinX_;
-                msg.linear.y  = twistLinY_;
+                msg.linear.x = twistLinX_;
+                msg.linear.y = twistLinY_;
                 msg.angular.z = twistAngZ_;
-                if (twistHeldCmdKey_ != Key::UNKNOWN) {
+                if (twistHeldCmdKey_ != Key::UNKNOWN)
+                {
                     // Command held — keep sending the sentinel values unchanged.
                     const double v = (twistHeldCmdKey_ == Key::Z) ? -99.0 : 99.0;
                     msg.linear.z = msg.angular.x = msg.angular.y = v;
@@ -308,7 +324,8 @@ private:
     {
         std::lock_guard<std::mutex> lk(stateMtx_);
 
-        if (k == Key::CTRL_C && e == KeyEvent::PRESS) {
+        if (k == Key::CTRL_C && e == KeyEvent::PRESS)
+        {
             rclcpp::shutdown();
             return;
         }
@@ -325,43 +342,64 @@ private:
     void _handleJoyKey(Key k, KeyEvent e)
     {
         // ── Movement keys: update pressed state (throttle ramp driven by send timer) ──
-        switch (k) {
+        switch (k)
+        {
         case Key::W:
-        case Key::ARROW_UP:    fwdPressed_   = (e != KeyEvent::RELEASE); return;
+        case Key::ARROW_UP:
+            fwdPressed_ = (e != KeyEvent::RELEASE);
+            return;
         case Key::S:
-        case Key::ARROW_DOWN:  bckPressed_   = (e != KeyEvent::RELEASE); return;
+        case Key::ARROW_DOWN:
+            bckPressed_ = (e != KeyEvent::RELEASE);
+            return;
         case Key::A:
-        case Key::ARROW_LEFT:  leftPressed_  = (e != KeyEvent::RELEASE); return;
+        case Key::ARROW_LEFT:
+            leftPressed_ = (e != KeyEvent::RELEASE);
+            return;
         case Key::D:
-        case Key::ARROW_RIGHT: rightPressed_ = (e != KeyEvent::RELEASE); return;
-        default: break;
+        case Key::ARROW_RIGHT:
+            rightPressed_ = (e != KeyEvent::RELEASE);
+            return;
+        default:
+            break;
         }
 
         // ── Command keys: hold = keep sending; release = back to axes ──────────
         const bool pressing = (e != KeyEvent::RELEASE);
-        switch (k) {
+        switch (k)
+        {
         case Key::K1:
         case Key::K2:
         case Key::K3:
         case Key::K4:
         case Key::K5:
         case Key::K6:
-        case Key::K7: {
-            if (pressing) {
-                const std::size_t btnIdx =
-                    (k == Key::K1) ? 0u : (k == Key::K2) ? 1u : (k == Key::K3) ? 2u :
-                    (k == Key::K4) ? 6u : (k == Key::K5) ? 7u : (k == Key::K6) ? 8u : 9u;
+        case Key::K7:
+        {
+            if (pressing)
+            {
+                const std::size_t btnIdx = (k == Key::K1)   ? 0u
+                                           : (k == Key::K2) ? 1u
+                                           : (k == Key::K3) ? 2u
+                                           : (k == Key::K4) ? 6u
+                                           : (k == Key::K5) ? 7u
+                                           : (k == Key::K6) ? 8u
+                                                            : 9u;
                 if (joyHeldCmdKey_ != k)
                     _setJoyCommand(btnIdx, k);
-            } else if (joyHeldCmdKey_ == k) {
+            }
+            else if (joyHeldCmdKey_ == k)
+            {
                 joyHeldCmdKey_ = Key::UNKNOWN;
                 joyButtons_.fill(0);
             }
             break;
         }
         case Key::E:
-            if (pressing) {
-                if (joyHeldCmdKey_ != Key::E) {
+            if (pressing)
+            {
+                if (joyHeldCmdKey_ != Key::E)
+                {
                     joyButtons_.fill(0);
                     joyButtons_[0] = joyButtons_[1] = joyButtons_[2] = joyButtons_[3] = -99;
                     joyHeldCmdKey_ = Key::E;
@@ -369,28 +407,35 @@ private:
                     joyAxes_.fill(0.0f);
                     RCLCPP_WARN(get_logger(), "[KBD] Joy E-STOP held");
                 }
-            } else if (joyHeldCmdKey_ == Key::E) {
+            }
+            else if (joyHeldCmdKey_ == Key::E)
+            {
                 joyHeldCmdKey_ = Key::UNKNOWN;
                 joyButtons_.fill(0);
                 RCLCPP_INFO(get_logger(), "[KBD] Joy E-STOP released");
             }
             break;
         case Key::R:
-            if (pressing) {
-                if (joyHeldCmdKey_ != Key::R) {
+            if (pressing)
+            {
+                if (joyHeldCmdKey_ != Key::R)
+                {
                     joyButtons_.fill(0);
                     joyButtons_[0] = joyButtons_[1] = joyButtons_[2] = joyButtons_[3] = 99;
                     joyHeldCmdKey_ = Key::R;
                     RCLCPP_INFO(get_logger(), "[KBD] Joy REQUEST-ACTIVE held");
                 }
-            } else if (joyHeldCmdKey_ == Key::R) {
+            }
+            else if (joyHeldCmdKey_ == Key::R)
+            {
                 joyHeldCmdKey_ = Key::UNKNOWN;
                 joyButtons_.fill(0);
                 RCLCPP_INFO(get_logger(), "[KBD] Joy REQUEST-ACTIVE released");
             }
             break;
         case Key::SPACE:
-            if (pressing) {
+            if (pressing)
+            {
                 fwdPressed_ = bckPressed_ = leftPressed_ = rightPressed_ = false;
                 joyAxes_.fill(0.0f);
                 joyButtons_.fill(0);
@@ -418,52 +463,74 @@ private:
     void _handleTwistKey(Key k, KeyEvent e)
     {
         // ── Movement keys: update pressed state (throttle ramp driven by send timer) ──
-        switch (k) {
+        switch (k)
+        {
         case Key::W:
-        case Key::ARROW_UP:    fwdPressed_         = (e != KeyEvent::RELEASE); return;
+        case Key::ARROW_UP:
+            fwdPressed_ = (e != KeyEvent::RELEASE);
+            return;
         case Key::S:
-        case Key::ARROW_DOWN:  bckPressed_         = (e != KeyEvent::RELEASE); return;
+        case Key::ARROW_DOWN:
+            bckPressed_ = (e != KeyEvent::RELEASE);
+            return;
         case Key::A:
-        case Key::ARROW_LEFT:  leftPressed_        = (e != KeyEvent::RELEASE); return;
+        case Key::ARROW_LEFT:
+            leftPressed_ = (e != KeyEvent::RELEASE);
+            return;
         case Key::D:
-        case Key::ARROW_RIGHT: rightPressed_       = (e != KeyEvent::RELEASE); return;
-        case Key::Q:           qPressed_           = (e != KeyEvent::RELEASE); return;
-        case Key::E:           strafeRightPressed_ = (e != KeyEvent::RELEASE); return;
-        default: break;
+        case Key::ARROW_RIGHT:
+            rightPressed_ = (e != KeyEvent::RELEASE);
+            return;
+        case Key::Q:
+            qPressed_ = (e != KeyEvent::RELEASE);
+            return;
+        case Key::E:
+            strafeRightPressed_ = (e != KeyEvent::RELEASE);
+            return;
+        default:
+            break;
         }
 
         // ── Command keys: hold = keep sending; release = back to axes ──────────
         const bool pressing = (e != KeyEvent::RELEASE);
-        switch (k) {
+        switch (k)
+        {
         case Key::Z:
-            if (pressing) {
-                if (twistHeldCmdKey_ != Key::Z) {
+            if (pressing)
+            {
+                if (twistHeldCmdKey_ != Key::Z)
+                {
                     twistHeldCmdKey_ = Key::Z;
-                    fwdPressed_ = bckPressed_ = leftPressed_ = rightPressed_ =
-                        qPressed_ = strafeRightPressed_ = false;
+                    fwdPressed_ = bckPressed_ = leftPressed_ = rightPressed_ = qPressed_ = strafeRightPressed_ = false;
                     twistLinX_ = twistLinY_ = twistAngZ_ = 0.0;
                     RCLCPP_WARN(get_logger(), "[KBD] Twist E-STOP held");
                 }
-            } else if (twistHeldCmdKey_ == Key::Z) {
+            }
+            else if (twistHeldCmdKey_ == Key::Z)
+            {
                 twistHeldCmdKey_ = Key::UNKNOWN;
                 RCLCPP_INFO(get_logger(), "[KBD] Twist E-STOP released");
             }
             break;
         case Key::R:
-            if (pressing) {
-                if (twistHeldCmdKey_ != Key::R) {
+            if (pressing)
+            {
+                if (twistHeldCmdKey_ != Key::R)
+                {
                     twistHeldCmdKey_ = Key::R;
                     RCLCPP_INFO(get_logger(), "[KBD] Twist REQUEST-ACTIVE held");
                 }
-            } else if (twistHeldCmdKey_ == Key::R) {
+            }
+            else if (twistHeldCmdKey_ == Key::R)
+            {
                 twistHeldCmdKey_ = Key::UNKNOWN;
                 RCLCPP_INFO(get_logger(), "[KBD] Twist REQUEST-ACTIVE released");
             }
             break;
         case Key::SPACE:
-            if (pressing) {
-                fwdPressed_ = bckPressed_ = leftPressed_ = rightPressed_ =
-                    qPressed_ = strafeRightPressed_ = false;
+            if (pressing)
+            {
+                fwdPressed_ = bckPressed_ = leftPressed_ = rightPressed_ = qPressed_ = strafeRightPressed_ = false;
                 twistLinX_ = twistLinY_ = twistAngZ_ = 0.0;
                 twistHeldCmdKey_ = Key::UNKNOWN;
                 RCLCPP_INFO(get_logger(), "[KBD] Twist STOP");
@@ -479,7 +546,8 @@ private:
     void _printHelp()
     {
         auto L = get_logger();
-        if (isJoy_) {
+        if (isJoy_)
+        {
             RCLCPP_INFO(L, "┌────────────────────────────────────────────────────┐");
             RCLCPP_INFO(L, "│  Keyboard Source [Joy mode]  — Throttle Control    │");
             RCLCPP_INFO(L, "├────────────────────────────────────────────────────┤");
@@ -495,7 +563,9 @@ private:
             RCLCPP_INFO(L, "│  7  RecoveryStand                                  │");
             RCLCPP_INFO(L, "│  E  E-stop (btns=-99)       R  Request-active      │");
             RCLCPP_INFO(L, "└────────────────────────────────────────────────────┘");
-        } else {
+        }
+        else
+        {
             RCLCPP_INFO(L, "┌────────────────────────────────────────────────────┐");
             RCLCPP_INFO(L, "│  Keyboard Source [Twist mode] — Throttle Control   │");
             RCLCPP_INFO(L, "├────────────────────────────────────────────────────┤");
@@ -516,17 +586,17 @@ private:
 
     std::string serverName_;
     std::string csmName_;
-    std::string channel_;      // active channel (joy or twist, fixed at startup)
-    bool        isJoy_{true};  // fixed at startup from initial_msg_type
-    int8_t      priority_{50};
-    int64_t     timeoutNs_{2'000'000'000LL};
-    int64_t     disconnectTimeoutNs_{10'000'000'000LL};
-    float       sendFreqHz_{10.0f};   // derived from send_rate_ms at startup
-    double      maxSetpointLinear_{1.0};
-    double      maxSetpointAngular_{1.0};
-    double      rampStepLinear_{0.05};
-    double      rampStepAngular_{0.05};
-    int64_t     sendRateMs_{100};
+    std::string channel_;  // active channel (joy or twist, fixed at startup)
+    bool isJoy_{true};  // fixed at startup from initial_msg_type
+    int8_t priority_{50};
+    int64_t timeoutNs_{2'000'000'000LL};
+    int64_t disconnectTimeoutNs_{10'000'000'000LL};
+    float sendFreqHz_{10.0f};  // derived from send_rate_ms at startup
+    double maxSetpointLinear_{1.0};
+    double maxSetpointAngular_{1.0};
+    double rampStepLinear_{0.05};
+    double rampStepAngular_{0.05};
+    int64_t sendRateMs_{100};
     std::string keyboardDevice_;  // "" = auto-detect; "stdin"/"tty" = force stdin; evdev path = force evdev
 
     // ── State (all protected by stateMtx_) ────────────────────────────────────
@@ -534,29 +604,29 @@ private:
     std::mutex stateMtx_;
 
     // Throttle: which movement keys are currently held.
-    bool fwdPressed_{false};          // W / ARROW_UP
-    bool bckPressed_{false};          // S / ARROW_DOWN
-    bool leftPressed_{false};         // A / ARROW_LEFT
-    bool rightPressed_{false};        // D / ARROW_RIGHT
-    bool qPressed_{false};            // Q (Twist strafe-left)
+    bool fwdPressed_{false};  // W / ARROW_UP
+    bool bckPressed_{false};  // S / ARROW_DOWN
+    bool leftPressed_{false};  // A / ARROW_LEFT
+    bool rightPressed_{false};  // D / ARROW_RIGHT
+    bool qPressed_{false};  // Q (Twist strafe-left)
     bool strafeRightPressed_{false};  // E (Twist strafe-right)
 
     // Joy: axes (ramped), command button state, held command key.
-    std::array<float,   JOY_AXES>    joyAxes_{};
+    std::array<float, JOY_AXES> joyAxes_{};
     std::array<int32_t, JOY_BUTTONS> joyButtons_{};
-    Key                              joyHeldCmdKey_{Key::UNKNOWN};  // != UNKNOWN while cmd held
+    Key joyHeldCmdKey_{Key::UNKNOWN};  // != UNKNOWN while cmd held
 
     // Twist: axes (ramped), held command key.
     double twistLinX_{0}, twistLinY_{0}, twistAngZ_{0};
-    Key    twistHeldCmdKey_{Key::UNKNOWN};  // Key::Z = e-stop, Key::R = req-active
+    Key twistHeldCmdKey_{Key::UNKNOWN};  // Key::Z = e-stop, Key::R = req-active
 
     // ── ROS 2 infrastructure ──────────────────────────────────────────────────
 
     std::unique_ptr<ControlSignalManager> csm_;
-    rclcpp::TimerBase::SharedPtr          initTimer_;
-    rclcpp::TimerBase::SharedPtr          sendTimer_;
-    std::unique_ptr<KeyboardHandler>      keyboard_;
-    std::thread                           initThread_;
+    rclcpp::TimerBase::SharedPtr initTimer_;
+    rclcpp::TimerBase::SharedPtr sendTimer_;
+    std::unique_ptr<KeyboardHandler> keyboard_;
+    std::thread initThread_;
 };
 
 RCLCPP_COMPONENTS_REGISTER_NODE(KeyboardSourceNode)

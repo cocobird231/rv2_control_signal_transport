@@ -19,15 +19,17 @@
 
 using namespace rv2_test;
 
-using rv2_interfaces::ControlSignalState;
 using rv2_interfaces::ControlSignalManager;
+using rv2_interfaces::ControlSignalState;
 
-using Joy   = sensor_msgs::msg::Joy;
+using Joy = sensor_msgs::msg::Joy;
 using Twist = geometry_msgs::msg::Twist;
-using Str   = std_msgs::msg::String;
+using Str = std_msgs::msg::String;
 using CSConst = rv2_interfaces::msg::ControlSignalConst;
 
-class ManagerTest : public CsmTestBase {};
+class ManagerTest : public CsmTestBase
+{
+};
 
 // ── T6: registerSource creates the remote Sink; duplicate is rejected ─────────
 TEST_F(ManagerTest, RegisterSourceCreatesRemoteSink)
@@ -37,15 +39,12 @@ TEST_F(ManagerTest, RegisterSourceCreatesRemoteSink)
     ControlSignalManager csmA(nodeA.get(), "cm_t6_csm_a");
     ControlSignalManager csmB(nodeB.get(), "cm_t6_csm_b");
 
-    auto info = makeInfo("cm6/joy",
-                         CSConst::CONTROL_SIGNAL_TYPE_JOY,
-                         CSConst::CONTROL_SIGNAL_MODE_TOPIC,
-                         "cm_t6_csm_b");
+    auto info =
+        makeInfo("cm6/joy", CSConst::CONTROL_SIGNAL_TYPE_JOY, CSConst::CONTROL_SIGNAL_MODE_TOPIC, "cm_t6_csm_b");
 
     ASSERT_TRUE(csmA.registerSource(info, 3000));
     EXPECT_NE(csmA.getSource("cm6/joy"), nullptr);
-    EXPECT_NE(csmB.getSink("cm6/joy"), nullptr)
-        << "remote Sink was not created on csmB";
+    EXPECT_NE(csmB.getSink("cm6/joy"), nullptr) << "remote Sink was not created on csmB";
 
     EXPECT_EQ(csmA.getSourceState("cm6/joy"), ControlSignalState::UNKNOWN);
 
@@ -61,14 +60,10 @@ TEST_F(ManagerTest, InfoReqListsSourcesAndSinks)
     ControlSignalManager csmC(nodeC.get(), "cm_t7_csm_c");
     ControlSignalManager csmD(nodeD.get(), "cm_t7_csm_d");
 
-    auto info1 = makeInfo("cm7/joy",
-                          CSConst::CONTROL_SIGNAL_TYPE_JOY,
-                          CSConst::CONTROL_SIGNAL_MODE_TOPIC,
-                          "cm_t7_csm_d");
-    auto info2 = makeInfo("cm7/twist",
-                          CSConst::CONTROL_SIGNAL_TYPE_TWIST,
-                          CSConst::CONTROL_SIGNAL_MODE_TOPIC,
-                          "cm_t7_csm_d");
+    auto info1 =
+        makeInfo("cm7/joy", CSConst::CONTROL_SIGNAL_TYPE_JOY, CSConst::CONTROL_SIGNAL_MODE_TOPIC, "cm_t7_csm_d");
+    auto info2 =
+        makeInfo("cm7/twist", CSConst::CONTROL_SIGNAL_TYPE_TWIST, CSConst::CONTROL_SIGNAL_MODE_TOPIC, "cm_t7_csm_d");
 
     ASSERT_TRUE(csmC.registerSource(info1, 3000));
     ASSERT_TRUE(csmC.registerSource(info2, 3000));
@@ -90,7 +85,7 @@ TEST_F(ManagerTest, SinkMsgCallbackFires)
     ControlSignalManager csmF(nodeF.get(), "cm_t9_csm_f");
 
     std::atomic<int> cbCount{0};
-    std::string      cbChannel;
+    std::string cbChannel;
 
     // Register the callback BEFORE the source registers — verifies retroactive
     // application to the Sink created later.
@@ -101,10 +96,8 @@ TEST_F(ManagerTest, SinkMsgCallbackFires)
             cbChannel = i.channel_name;
         });
 
-    auto info = makeInfo("cm9/joy_cb",
-                         CSConst::CONTROL_SIGNAL_TYPE_JOY,
-                         CSConst::CONTROL_SIGNAL_MODE_TOPIC,
-                         "cm_t9_csm_f");
+    auto info =
+        makeInfo("cm9/joy_cb", CSConst::CONTROL_SIGNAL_TYPE_JOY, CSConst::CONTROL_SIGNAL_MODE_TOPIC, "cm_t9_csm_f");
     ASSERT_TRUE(csmE.registerSource(info, 3000));
 
     rclcpp::sleep_for(300ms);  // discovery
@@ -131,14 +124,10 @@ TEST_F(ManagerTest, MultipleTypesSameCsmPair)
     ControlSignalManager csmG(nodeG.get(), "cm_t10_csm_g");
     ControlSignalManager csmH(nodeH.get(), "cm_t10_csm_h");
 
-    auto joyInfo = makeInfo("cm10/joy",
-                            CSConst::CONTROL_SIGNAL_TYPE_JOY,
-                            CSConst::CONTROL_SIGNAL_MODE_TOPIC,
-                            "cm_t10_csm_h");
-    auto twsInfo = makeInfo("cm10/twist",
-                            CSConst::CONTROL_SIGNAL_TYPE_TWIST,
-                            CSConst::CONTROL_SIGNAL_MODE_TOPIC,
-                            "cm_t10_csm_h");
+    auto joyInfo =
+        makeInfo("cm10/joy", CSConst::CONTROL_SIGNAL_TYPE_JOY, CSConst::CONTROL_SIGNAL_MODE_TOPIC, "cm_t10_csm_h");
+    auto twsInfo =
+        makeInfo("cm10/twist", CSConst::CONTROL_SIGNAL_TYPE_TWIST, CSConst::CONTROL_SIGNAL_MODE_TOPIC, "cm_t10_csm_h");
 
     ASSERT_TRUE(csmG.registerSource(joyInfo, 3000));
     ASSERT_TRUE(csmG.registerSource(twsInfo, 3000));
@@ -150,7 +139,7 @@ TEST_F(ManagerTest, MultipleTypesSameCsmPair)
     ASSERT_NE(csmH.getSink("cm10/twist"), nullptr);
 
     // Sinks report the correct concrete message types.
-    EXPECT_EQ(csmH.getSink("cm10/joy")->msgType(),   std::type_index(typeid(Joy)));
+    EXPECT_EQ(csmH.getSink("cm10/joy")->msgType(), std::type_index(typeid(Joy)));
     EXPECT_EQ(csmH.getSink("cm10/twist")->msgType(), std::type_index(typeid(Twist)));
 
     rclcpp::sleep_for(300ms);  // discovery
@@ -177,14 +166,10 @@ TEST_F(ManagerTest, MultipleSourcesSameTypeDifferentChannels)
     ControlSignalManager csmA(nodeA.get(), "cm_ms_csm_a");
     ControlSignalManager csmB(nodeB.get(), "cm_ms_csm_b");
 
-    auto infoA = makeInfo("cmMS/joy_a",
-                          CSConst::CONTROL_SIGNAL_TYPE_JOY,
-                          CSConst::CONTROL_SIGNAL_MODE_TOPIC,
-                          "cm_ms_csm_b");
-    auto infoB = makeInfo("cmMS/joy_b",
-                          CSConst::CONTROL_SIGNAL_TYPE_JOY,
-                          CSConst::CONTROL_SIGNAL_MODE_TOPIC,
-                          "cm_ms_csm_b");
+    auto infoA =
+        makeInfo("cmMS/joy_a", CSConst::CONTROL_SIGNAL_TYPE_JOY, CSConst::CONTROL_SIGNAL_MODE_TOPIC, "cm_ms_csm_b");
+    auto infoB =
+        makeInfo("cmMS/joy_b", CSConst::CONTROL_SIGNAL_TYPE_JOY, CSConst::CONTROL_SIGNAL_MODE_TOPIC, "cm_ms_csm_b");
 
     ASSERT_TRUE(csmA.registerSource(infoA, 3000));
     ASSERT_TRUE(csmA.registerSource(infoB, 3000));
@@ -209,17 +194,15 @@ TEST_F(ManagerTest, MultipleSourcesSameTypeDifferentChannels)
 // ── NEW: ControlSignalManager::typeKeyFor reverse lookup ──────────────────────
 TEST_F(ManagerTest, TypeKeyForReverseLookup)
 {
-    EXPECT_EQ(ControlSignalManager::typeKeyFor<Joy>(),
-              CSConst::CONTROL_SIGNAL_TYPE_JOY);
-    EXPECT_EQ(ControlSignalManager::typeKeyFor<Twist>(),
-              CSConst::CONTROL_SIGNAL_TYPE_TWIST);
-    EXPECT_EQ(ControlSignalManager::typeKeyFor<Str>(),
-              CSConst::CONTROL_SIGNAL_TYPE_STRING);
+    EXPECT_EQ(ControlSignalManager::typeKeyFor<Joy>(), CSConst::CONTROL_SIGNAL_TYPE_JOY);
+    EXPECT_EQ(ControlSignalManager::typeKeyFor<Twist>(), CSConst::CONTROL_SIGNAL_TYPE_TWIST);
+    EXPECT_EQ(ControlSignalManager::typeKeyFor<Str>(), CSConst::CONTROL_SIGNAL_TYPE_STRING);
 
     // A message type that was never registered resolves to "unknown".
-    struct NeverRegisteredMsg {};
-    EXPECT_EQ(ControlSignalManager::typeKeyFor<NeverRegisteredMsg>(),
-              CSConst::CONTROL_SIGNAL_TYPE_UNKNOWN);
+    struct NeverRegisteredMsg
+    {
+    };
+    EXPECT_EQ(ControlSignalManager::typeKeyFor<NeverRegisteredMsg>(), CSConst::CONTROL_SIGNAL_TYPE_UNKNOWN);
 }
 
 // ── NEW: auto-disconnect — a TIMED-OUT Sink is removed by the status timer ────
@@ -236,8 +219,9 @@ TEST_F(ManagerTest, AutoDisconnectAfterTimeout)
                          CSConst::CONTROL_SIGNAL_TYPE_JOY,
                          CSConst::CONTROL_SIGNAL_MODE_TOPIC,
                          "cm_ad_csm_b",
-                         false, 0,
-                         300'000'000LL,   // timeout 300 ms
+                         false,
+                         0,
+                         300'000'000LL,  // timeout 300 ms
                          0.0f,
                          600'000'000LL);  // disconnect 600 ms
 
@@ -266,8 +250,7 @@ TEST_F(ManagerTest, AutoDisconnectAfterTimeout)
     // Stop sending: Sink → TIMEOUT (after 300 ms) → removed (after 600 ms more).
     rclcpp::sleep_for(2000ms);
 
-    EXPECT_EQ(csmB.getSink("cmAD/joy"), nullptr)
-        << "timed-out Sink should have been auto-disconnected/removed";
+    EXPECT_EQ(csmB.getSink("cmAD/joy"), nullptr) << "timed-out Sink should have been auto-disconnected/removed";
 }
 
 // ── NEW: service-mode registration + delivery through the CSM ─────────────────
@@ -282,7 +265,9 @@ TEST_F(ManagerTest, ServiceModeRegistrationAndDelivery)
                          CSConst::CONTROL_SIGNAL_TYPE_JOY,
                          CSConst::CONTROL_SIGNAL_MODE_SERVICE,
                          "cm_sm_csm_b",
-                         false, 0, 500'000'000LL);
+                         false,
+                         0,
+                         500'000'000LL);
 
     ASSERT_TRUE(csmA.registerSource(info, 3000));
     ASSERT_NE(csmB.getSink("cmSM/joy_svc"), nullptr);
@@ -299,7 +284,7 @@ TEST_F(ManagerTest, ServiceModeRegistrationAndDelivery)
     EXPECT_TRUE(ok);
 
     EXPECT_EQ(csmA.getSourceState("cmSM/joy_svc"), ControlSignalState::ACTIVE);
-    EXPECT_EQ(csmB.getSinkState("cmSM/joy_svc"),   ControlSignalState::ACTIVE);
+    EXPECT_EQ(csmB.getSinkState("cmSM/joy_svc"), ControlSignalState::ACTIVE);
 
     Joy out;
     ASSERT_TRUE(csmB.getSink("cmSM/joy_svc")->readErased(&out));
@@ -315,10 +300,7 @@ TEST_F(ManagerTest, UnregisteredTypeRejected)
     ControlSignalManager csmA(nodeA.get(), "cm_ur_csm_a");
     ControlSignalManager csmB(nodeB.get(), "cm_ur_csm_b");
 
-    auto info = makeInfo("cmUR/bad",
-                         "totally_unregistered_type",
-                         CSConst::CONTROL_SIGNAL_MODE_TOPIC,
-                         "cm_ur_csm_b");
+    auto info = makeInfo("cmUR/bad", "totally_unregistered_type", CSConst::CONTROL_SIGNAL_MODE_TOPIC, "cm_ur_csm_b");
 
     EXPECT_FALSE(csmA.registerSource(info, 2000));
     EXPECT_EQ(csmA.getSource("cmUR/bad"), nullptr);

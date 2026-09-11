@@ -26,11 +26,11 @@ using InfoT = ControlSignalInfo;
 
 /// Mode / type string constants re-exported from the message definition
 /// (rosidl generates them as static const std::string).
-inline const std::string& kModeTopic   = ControlSignalInfo::MODE_TOPIC;
+inline const std::string& kModeTopic = ControlSignalInfo::MODE_TOPIC;
 inline const std::string& kModeService = ControlSignalInfo::MODE_SERVICE;
-inline const std::string& kTypeJoy     = ControlSignalInfo::TYPE_JOY;
-inline const std::string& kTypeTwist   = ControlSignalInfo::TYPE_TWIST;
-inline const std::string& kTypeString  = ControlSignalInfo::TYPE_STRING;
+inline const std::string& kTypeJoy = ControlSignalInfo::TYPE_JOY;
+inline const std::string& kTypeTwist = ControlSignalInfo::TYPE_TWIST;
+inline const std::string& kTypeString = ControlSignalInfo::TYPE_STRING;
 
 /// Result of validateControlSignalInfo(); error names the offending field.
 struct InfoValidation
@@ -70,40 +70,40 @@ inline InfoValidation validateControlSignalInfo(const ControlSignalInfo& info)
     const bool isTopic = info.mode == ControlSignalInfo::MODE_TOPIC;
     const bool isService = info.mode == ControlSignalInfo::MODE_SERVICE;
     if (!isTopic && !isService)
-        return {false, "mode must be \"topic\" or \"service\" (got \"" +
-                           info.mode + "\")"};
+        return {false, "mode must be \"topic\" or \"service\" (got \"" + info.mode + "\")"};
     if (info.type.empty())
         return {false, "type must not be empty"};
 
     // Rule 4
     if (info.priority < 1 || info.priority > 100)
-        return {false, "priority (" + std::to_string(static_cast<int>(info.priority)) +
-                           ") must be within [1, 100]; 0 = invalid"};
+        return {false,
+                "priority (" + std::to_string(static_cast<int>(info.priority)) +
+                    ") must be within [1, 100]; 0 = invalid"};
 
     // Rule 5
     if (info.timeout_ns < 0)
         return {false, "timeout_ns must be >= 0 (0 = disabled)"};
     if (info.disconnect_timeout_ns < 0)
         return {false, "disconnect_timeout_ns must be >= 0 (0 = disabled)"};
-    if (info.timeout_ns > 0 && info.disconnect_timeout_ns > 0 &&
-        info.disconnect_timeout_ns <= info.timeout_ns)
-        return {false, "disconnect_timeout_ns (" +
-                           std::to_string(info.disconnect_timeout_ns) +
-                           ") must be strictly greater than timeout_ns (" +
-                           std::to_string(info.timeout_ns) + ")"};
+    if (info.timeout_ns > 0 && info.disconnect_timeout_ns > 0 && info.disconnect_timeout_ns <= info.timeout_ns)
+        return {false,
+                "disconnect_timeout_ns (" + std::to_string(info.disconnect_timeout_ns) +
+                    ") must be strictly greater than timeout_ns (" + std::to_string(info.timeout_ns) + ")"};
     if (isService && info.timeout_ns == 0)
-        return {false, "timeout_ns must be > 0 in service mode "
-                       "(response wait limit cannot be disabled)"};
+        return {false,
+                "timeout_ns must be > 0 in service mode "
+                "(response wait limit cannot be disabled)"};
 
     // Rule 6
     if (info.target_manager_name.empty())
-        return {false, "target_manager_name must not be empty on the "
-                       "registerSource path"};
+        return {false,
+                "target_manager_name must not be empty on the "
+                "registerSource path"};
 
     return {true, ""};
 }
 
-} // namespace r1
-} // namespace rv2_interfaces
+}  // namespace r1
+}  // namespace rv2_interfaces
 
-#endif // RV2_CONTROL_SIGNAL_TRANSPORT_R1_CONTROL_SIGNAL_INFO_H
+#endif  // RV2_CONTROL_SIGNAL_TRANSPORT_R1_CONTROL_SIGNAL_INFO_H

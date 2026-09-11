@@ -45,8 +45,7 @@ constexpr int64_t kMs = 1'000'000;
 
 bool waitFor(const std::function<bool()>& cond, int64_t timeoutMs = 5000)
 {
-    const auto deadline =
-        std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
     while (std::chrono::steady_clock::now() < deadline)
     {
         if (cond())
@@ -66,7 +65,10 @@ Joy makeJoy(float a)
 class HandleTestBase : public ::testing::Test
 {
 protected:
-    explicit HandleTestBase(const char* prefix) : prefix_(prefix) {}
+    explicit HandleTestBase(const char* prefix) :
+        prefix_(prefix)
+    {
+    }
 
     void SetUp() override
     {
@@ -74,25 +76,28 @@ protected:
         nodeA_ = std::make_shared<rclcpp::Node>("h_a_" + uid_);
         nodeB_ = std::make_shared<rclcpp::Node>("h_b_" + uid_);
         auxNode_ = std::make_shared<rclcpp::Node>("h_aux_" + uid_);
-        executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>(
-            rclcpp::ExecutorOptions(), 4);
+        executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>(rclcpp::ExecutorOptions(), 4);
         executor_->add_node(nodeA_);
         executor_->add_node(nodeB_);
         executor_->add_node(auxNode_);
         // Minimal master mock: accept register + heartbeat.
         masterReg_ = auxNode_->create_service<CsmRegisterSrv>(
             master() + "/register",
-            [](const std::shared_ptr<CsmRegisterSrv::Request>,
-               std::shared_ptr<CsmRegisterSrv::Response> rs) {
+            [](const std::shared_ptr<CsmRegisterSrv::Request>, std::shared_ptr<CsmRegisterSrv::Response> rs)
+            {
                 rs->response = CsmRegisterSrv::Response::RESPONSE_SUCCESS;
             });
         masterHb_ = auxNode_->create_service<CsmHeartbeatSrv>(
             master() + "/heartbeat",
-            [](const std::shared_ptr<CsmHeartbeatSrv::Request>,
-               std::shared_ptr<CsmHeartbeatSrv::Response> rs) {
+            [](const std::shared_ptr<CsmHeartbeatSrv::Request>, std::shared_ptr<CsmHeartbeatSrv::Response> rs)
+            {
                 rs->response = CsmHeartbeatSrv::Response::RESPONSE_SUCCESS;
             });
-        spin_ = std::thread([this] { executor_->spin(); });
+        spin_ = std::thread(
+            [this]
+            {
+                executor_->spin();
+            });
         while (!executor_->is_spinning())
             std::this_thread::sleep_for(1ms);
 
@@ -100,12 +105,12 @@ protected:
         ManagerOptions optB = makeOptions();
         mgrA_ = std::make_unique<ControlSignalManager>(nodeA_.get(), nameA(), optA);
         mgrB_ = std::make_unique<ControlSignalManager>(nodeB_.get(), nameB(), optB);
-        ASSERT_TRUE(waitFor([&] {
-            return mgrA_->registerSource(ControlSignalInfo(), 1).code !=
-                       RegisterError::INVALID_CONTEXT &&
-                   mgrB_->registerSource(ControlSignalInfo(), 1).code !=
-                       RegisterError::INVALID_CONTEXT;
-        }));
+        ASSERT_TRUE(waitFor(
+            [&]
+            {
+                return mgrA_->registerSource(ControlSignalInfo(), 1).code != RegisterError::INVALID_CONTEXT &&
+                       mgrB_->registerSource(ControlSignalInfo(), 1).code != RegisterError::INVALID_CONTEXT;
+            }));
     }
 
     void TearDown() override
@@ -138,9 +143,7 @@ protected:
         return o;
     }
 
-    ControlSignalInfo info(const std::string& tag,
-                           int64_t timeoutNs = 200 * kMs,
-                           int64_t disconnectNs = 5'000 * kMs)
+    ControlSignalInfo info(const std::string& tag, int64_t timeoutNs = 200 * kMs, int64_t disconnectNs = 5'000 * kMs)
     {
         ControlSignalInfo i;
         i.controller_name = "ctrl_" + uid_ + "_" + tag;
@@ -166,4 +169,4 @@ protected:
 };
 int HandleTestBase::counter_ = 0;
 
-} // namespace
+}  // namespace

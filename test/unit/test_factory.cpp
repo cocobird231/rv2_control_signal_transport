@@ -31,8 +31,7 @@ constexpr int64_t kMs = 1'000'000;
 class FactoryTest : public rv2_interfaces::r1::CsmTestBase
 {
 protected:
-    ControlSignalInfo info(const std::string& channel, const std::string& mode,
-                           const std::string& type)
+    ControlSignalInfo info(const std::string& channel, const std::string& mode, const std::string& type)
     {
         return makeTransportInfo(channel, mode, type, 200 * kMs, 2000 * kMs);
     }
@@ -45,27 +44,18 @@ TEST_F(FactoryTest, F1_CreateRegisteredTypes)
     auto& f = ControlSignalFactory::Instance();
     std::string err;
 
-    auto srcTopic = f.CreateSource("joy", node_.get(),
-                                   info("f1/a", ControlSignalInfo::MODE_TOPIC, "joy"),
-                                   &err);
+    auto srcTopic = f.CreateSource("joy", node_.get(), info("f1/a", ControlSignalInfo::MODE_TOPIC, "joy"), &err);
     ASSERT_NE(srcTopic, nullptr) << err;
     EXPECT_EQ(srcTopic->msgType(), std::type_index(typeid(sensor_msgs::msg::Joy)));
 
-    auto srcService = f.CreateSource("joy", node_.get(),
-                                     info("f1/b", ControlSignalInfo::MODE_SERVICE, "joy"),
-                                     &err);
+    auto srcService = f.CreateSource("joy", node_.get(), info("f1/b", ControlSignalInfo::MODE_SERVICE, "joy"), &err);
     ASSERT_NE(srcService, nullptr) << err;
 
-    auto sinkTopic = f.CreateSink("twist", node_.get(),
-                                  info("f1/c", ControlSignalInfo::MODE_TOPIC, "twist"),
-                                  &err);
+    auto sinkTopic = f.CreateSink("twist", node_.get(), info("f1/c", ControlSignalInfo::MODE_TOPIC, "twist"), &err);
     ASSERT_NE(sinkTopic, nullptr) << err;
-    EXPECT_EQ(sinkTopic->msgType(),
-              std::type_index(typeid(geometry_msgs::msg::Twist)));
+    EXPECT_EQ(sinkTopic->msgType(), std::type_index(typeid(geometry_msgs::msg::Twist)));
 
-    auto sinkService = f.CreateSink("twist", node_.get(),
-                                    info("f1/d", ControlSignalInfo::MODE_SERVICE, "twist"),
-                                    &err);
+    auto sinkService = f.CreateSink("twist", node_.get(), info("f1/d", ControlSignalInfo::MODE_SERVICE, "twist"), &err);
     ASSERT_NE(sinkService, nullptr) << err;
 }
 
@@ -76,17 +66,14 @@ TEST_F(FactoryTest, F2_UnregisteredTypeNoThrow)
     auto& f = ControlSignalFactory::Instance();
     std::string err;
     std::shared_ptr<rv2_interfaces::r1::BaseControlSignalSource> src;
-    EXPECT_NO_THROW(src = f.CreateSource(
-        "nope", node_.get(), info("f2/a", ControlSignalInfo::MODE_TOPIC, "nope"),
-        &err));
+    EXPECT_NO_THROW(src =
+                        f.CreateSource("nope", node_.get(), info("f2/a", ControlSignalInfo::MODE_TOPIC, "nope"), &err));
     EXPECT_EQ(src, nullptr);
     EXPECT_FALSE(err.empty());
 
     // Topic-only "string" refused in service mode, same non-throwing contract.
     err.clear();
-    auto sink = f.CreateSink("string", node_.get(),
-                             info("f2/b", ControlSignalInfo::MODE_SERVICE, "string"),
-                             &err);
+    auto sink = f.CreateSink("string", node_.get(), info("f2/b", ControlSignalInfo::MODE_SERVICE, "string"), &err);
     EXPECT_EQ(sink, nullptr);
     EXPECT_FALSE(err.empty());
 }
@@ -109,9 +96,7 @@ TEST_F(FactoryTest, F4_DuplicateRegisterRefused)
     EXPECT_FALSE((f.Register<geometry_msgs::msg::Twist, void>("joy")));
     // The original mapping survives: msgType is still Joy.
     std::string err;
-    auto src = f.CreateSource("joy", node_.get(),
-                              info("f4/a", ControlSignalInfo::MODE_TOPIC, "joy"),
-                              &err);
+    auto src = f.CreateSource("joy", node_.get(), info("f4/a", ControlSignalInfo::MODE_TOPIC, "joy"), &err);
     ASSERT_NE(src, nullptr) << err;
     EXPECT_EQ(src->msgType(), std::type_index(typeid(sensor_msgs::msg::Joy)));
 }
@@ -129,7 +114,7 @@ TEST_F(FactoryTest, F5_SingletonAcrossTUs)
     EXPECT_EQ(&f, &ControlSignalFactory::Instance());
 }
 
-} // namespace
+}  // namespace
 
 int main(int argc, char** argv)
 {

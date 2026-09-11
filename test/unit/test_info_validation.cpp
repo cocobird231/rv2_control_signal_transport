@@ -25,13 +25,13 @@ constexpr int64_t kMs = 1'000'000;
 ControlSignalInfo makeR1Info()
 {
     ControlSignalInfo info;
-    info.controller_name       = "ctrl_a";
-    info.channel_name          = "chan/a";
-    info.target_manager_name   = "csm_target";
-    info.mode                  = ControlSignalInfo::MODE_TOPIC;
-    info.type                  = ControlSignalInfo::TYPE_JOY;
-    info.priority              = 50;
-    info.timeout_ns            = 200 * kMs;
+    info.controller_name = "ctrl_a";
+    info.channel_name = "chan/a";
+    info.target_manager_name = "csm_target";
+    info.mode = ControlSignalInfo::MODE_TOPIC;
+    info.type = ControlSignalInfo::TYPE_JOY;
+    info.priority = 50;
+    info.timeout_ns = 200 * kMs;
     info.disconnect_timeout_ns = 2000 * kMs;
     return info;
 }
@@ -104,7 +104,7 @@ TEST(InfoValidationTest, V7_TimeoutZeroTopicVsService)
 {
     auto topic = makeR1Info();
     topic.timeout_ns = 0;
-    topic.disconnect_timeout_ns = 2000 * kMs;   // variant C is fine
+    topic.disconnect_timeout_ns = 2000 * kMs;  // variant C is fine
     EXPECT_TRUE(validateControlSignalInfo(topic).valid);
 
     auto service = makeR1Info();
@@ -153,7 +153,7 @@ TEST(InfoValidationTest, V11_EmptyTargetManager)
     EXPECT_NE(r.error.find("target_manager_name"), std::string::npos);
 }
 
-} // namespace
+}  // namespace
 
 int main(int argc, char** argv)
 {
