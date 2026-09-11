@@ -1,5 +1,5 @@
-"""
-keyboard_source.launch.py
+r"""
+keyboard_source.launch.py.
 
 Launches KeyboardSourceNode in its own multi-threaded container so that
 ControlSignalManager::registerSource() (which blocks) can call back into
@@ -11,7 +11,7 @@ Usage
 ─────
   ros2 launch rv2_control_signal_transport keyboard_source.launch.py
 
-  ros2 launch rv2_control_signal_transport keyboard_source.launch.py \\
+  ros2 launch rv2_control_signal_transport keyboard_source.launch.py \
       config_file:=/path/to/keyboard_source.yaml
 
 Launch arguments
@@ -31,35 +31,38 @@ def generate_launch_description():
     # ── Launch argument declarations ──────────────────────────────────────────
     args = [
         DeclareLaunchArgument(
-            'config_file',
-            default_value=PathJoinSubstitution([
-                FindPackageShare('rv2_control_signal_transport'),
-                'config',
-                'keyboard_source.yaml',
-            ]),
-            description='Path to KeyboardSourceNode ROS 2 parameter YAML file'),
+            "config_file",
+            default_value=PathJoinSubstitution(
+                [
+                    FindPackageShare("rv2_control_signal_transport"),
+                    "config",
+                    "keyboard_source.yaml",
+                ]
+            ),
+            description="Path to KeyboardSourceNode ROS 2 parameter YAML file",
+        ),
     ]
 
     # ── Composable node (multi-threaded container required) ───────────────────
     container = ComposableNodeContainer(
-        name='keyboard_source_container',
-        namespace='',
-        package='rclcpp_components',
+        name="keyboard_source_container",
+        namespace="",
+        package="rclcpp_components",
         # component_container_mt uses MultiThreadedExecutor, which is required
         # because KeyboardSourceNode::_init() calls registerSource() — a blocking
         # service call — from a timer callback that runs on the same executor.
-        executable='component_container_mt',
+        executable="component_container_mt",
         composable_node_descriptions=[
             ComposableNode(
-                package='rv2_control_signal_transport',
-                plugin='KeyboardSourceNode',
-                name='keyboard_source',
+                package="rv2_control_signal_transport",
+                plugin="KeyboardSourceNode",
+                name="keyboard_source",
                 parameters=[
-                    LaunchConfiguration('config_file'),
+                    LaunchConfiguration("config_file"),
                 ],
             ),
         ],
-        output='screen',
+        output="screen",
     )
 
     return LaunchDescription(args + [container])

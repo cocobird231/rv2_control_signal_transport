@@ -120,6 +120,11 @@ if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
+  # C/C++ formatting is checked by r1_test_framework/test_lint.sh using the
+  # approved clang-format policy. Keep the other ament checks enabled.
+  list(APPEND AMENT_LINT_AUTO_EXCLUDE ament_cmake_uncrustify)
+  # Preserve ament's Python checks while matching Ruff's double-quote policy.
+  set(ament_cmake_flake8_CONFIG_FILE "${CMAKE_CURRENT_SOURCE_DIR}/test/ament_flake8.ini")
   ament_lint_auto_find_test_dependencies()
 
   find_package(ament_cmake_gtest REQUIRED)
@@ -250,7 +255,7 @@ if(BUILD_TESTING)
     set_property(TEST ${unit_test} APPEND PROPERTY LABELS unit)
   endforeach()
   foreach(integration_test test_manager test_handles_lifecycle test_csm_master
-                           test_control_signal_manager)
+    test_control_signal_manager)
     set_property(TEST ${integration_test} APPEND PROPERTY LABELS integration)
   endforeach()
 endif()

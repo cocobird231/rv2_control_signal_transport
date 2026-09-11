@@ -1,5 +1,5 @@
-"""
-keyboard_source_joy.launch.py
+r"""
+keyboard_source_joy.launch.py.
 
 Thin wrapper that launches KeyboardSourceNode in Joy mode by delegating
 to keyboard_source.launch.py with initial_msg_type fixed to "joy".
@@ -13,7 +13,7 @@ Full argument reference: keyboard_source.launch.py
 Usage
 ─────
   ros2 launch rv2_control_signal_transport keyboard_source_joy.launch.py
-  ros2 launch rv2_control_signal_transport keyboard_source_joy.launch.py \\
+  ros2 launch rv2_control_signal_transport keyboard_source_joy.launch.py \
       server_name:=my_robot  priority:=80
 """
 
@@ -25,20 +25,27 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    return LaunchDescription([
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                PathJoinSubstitution([
-                    FindPackageShare('rv2_control_signal_transport'),
-                    'launch', 'keyboard_source.launch.py',
-                ])
+    return LaunchDescription(
+        [
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    PathJoinSubstitution(
+                        [
+                            FindPackageShare("rv2_control_signal_transport"),
+                            "launch",
+                            "keyboard_source.launch.py",
+                        ]
+                    )
+                ),
+                launch_arguments={
+                    "config_file": PathJoinSubstitution(
+                        [
+                            FindPackageShare("rv2_control_signal_transport"),
+                            "config",
+                            "keyboard_source_joy.yaml",
+                        ]
+                    ),
+                }.items(),
             ),
-            launch_arguments={
-                'config_file': PathJoinSubstitution([
-                    FindPackageShare('rv2_control_signal_transport'),
-                    'config',
-                    'keyboard_source_joy.yaml',
-                ]),
-            }.items(),
-        ),
-    ])
+        ]
+    )
