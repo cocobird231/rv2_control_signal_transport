@@ -1,7 +1,4 @@
 repositories:
-  rv2_interfaces:
-    type: local
-    path: ../rv2_interfaces
   r1_interfaces:
     type: local
     path: ../r1_interfaces
