@@ -58,7 +58,7 @@ ament_export_include_directories(include)
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_libraries(r1_control_signal_transport)
 ament_export_dependencies(
-  rclcpp sensor_msgs geometry_msgs std_msgs)
+  rclcpp sensor_msgs geometry_msgs std_msgs r1_interfaces)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

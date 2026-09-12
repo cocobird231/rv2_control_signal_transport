@@ -8,6 +8,7 @@
  * bare-service node recording requests (§8.4).
  */
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -36,6 +37,7 @@ using rv2_interfaces::r1::ControlSignalInfo;
 using rv2_interfaces::r1::ControlSignalManager;
 using rv2_interfaces::r1::ControlSignalState;
 using rv2_interfaces::r1::ManagerOptions;
+using rv2_interfaces::r1::ManagerTestAccess;
 using rv2_interfaces::r1::RegisterError;
 using rv2_interfaces::r1::RetryPolicy;
 using rv2_interfaces::r1::SendResult;
@@ -153,6 +155,159 @@ struct Events
     }
     std::mutex mtx;
     std::vector<ControlSignalManager::NotificationEvent> list;
+};
+
+/// M22 synchronization lives entirely in the test: no fake terminal verdicts
+/// or alternate commit implementation. Every pause is outside Manager locks.
+struct M22Trace
+{
+    enum Gate : size_t
+    {
+        CALCULATED,
+        CANCELLED,
+        SEALED,
+        GATE_COUNT
+    };
+
+    void pause(Gate gate)
+    {
+        std::unique_lock<std::mutex> lk(mtx);
+        reached[gate] = true;
+        cv.notify_all();
+        if (!cv.wait_for(lk,
+                         10s,
+                         [&]
+                         {
+                             return released[gate];
+                         }))
+            timedOut.store(true);
+    }
+
+    bool wait(Gate gate)
+    {
+        std::unique_lock<std::mutex> lk(mtx);
+        return cv.wait_for(lk,
+                           10s,
+                           [&]
+                           {
+                               return reached[gate];
+                           });
+    }
+
+    void release(Gate gate)
+    {
+        std::lock_guard<std::mutex> lk(mtx);
+        released[gate] = true;
+        cv.notify_all();
+    }
+
+    void releaseAll()
+    {
+        std::lock_guard<std::mutex> lk(mtx);
+        released.fill(true);
+        cv.notify_all();
+    }
+
+    void record(const std::string& event)
+    {
+        std::lock_guard<std::mutex> lk(mtx);
+        events.push_back(event);
+    }
+
+    std::vector<std::string> snapshot()
+    {
+        std::lock_guard<std::mutex> lk(mtx);
+        return events;
+    }
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::array<bool, GATE_COUNT> reached{};
+    std::array<bool, GATE_COUNT> released{};
+    std::vector<std::string> events;
+    std::atomic<bool> timedOut{false};
+    std::atomic<int> candidates{0}, cancellations{0}, seals{0}, callbacks{0}, shutdowns{0}, removals{0};
+    std::atomic<uint64_t> firstGeneration{0};
+    std::atomic<bool> callbackSawEntry{false}, notificationSawAbsent{false};
+};
+
+/// Releasing all gates on every gtest early return lets executor/Manager
+/// teardown drain normally. Callbacks retain shared state, never stack refs.
+struct M22GateRelease
+{
+    std::shared_ptr<M22Trace> trace;
+    ~M22GateRelease() { trace->releaseAll(); }
+};
+
+class M22SourceProbe : public rv2_interfaces::r1::BaseControlSignalSource
+{
+public:
+    M22SourceProbe(std::shared_ptr<BaseControlSignalSource> source, std::shared_ptr<M22Trace> trace) :
+        source_(std::move(source)),
+        trace_(std::move(trace))
+    {
+    }
+
+    ControlSignalState getState() const override { return source_->getState(); }
+    const ControlSignalInfo& getInfo() const override { return source_->getInfo(); }
+    std::type_index msgType() const override { return source_->msgType(); }
+    SendResult sendErased(const void* msg) override { return source_->sendErased(msg); }
+    void shutdown() override
+    {
+        trace_->shutdowns.fetch_add(1);
+        trace_->record("shutdown");
+        source_->shutdown();
+    }
+
+    rv2_interfaces::r1::EntityDecision currentDecision() const
+    {
+        return ManagerTestAccess::calc(*source_, steadyNowNs());
+    }
+
+private:
+    rv2_interfaces::r1::EntityDecision _calcStatus(int64_t nowNs) const override
+    {
+        const auto decision = ManagerTestAccess::calc(*source_, nowNs);
+        if (decision.status.state == ControlSignalState::DISCONNECTED &&
+            decision.cause == rv2_interfaces::r1::LivenessCause::INACTIVITY)
+        {
+            if (trace_->candidates.fetch_add(1) == 0)
+            {
+                trace_->firstGeneration.store(decision.observedActivityGeneration);
+                trace_->pause(M22Trace::CALCULATED);
+            }
+        }
+        return decision;
+    }
+
+    bool _trySealLocalTerminal(const rv2_interfaces::r1::EntityDecision& decision) override
+    {
+        const bool sealed = ManagerTestAccess::trySealLocalTerminal(*source_, decision);
+        if (sealed)
+        {
+            trace_->seals.fetch_add(1);
+            trace_->pause(M22Trace::SEALED);
+        }
+        else
+        {
+            trace_->cancellations.fetch_add(1);
+            trace_->pause(M22Trace::CANCELLED);
+        }
+        return sealed;
+    }
+
+    void _sealTerminal() override { ManagerTestAccess::sealTerminal(*source_); }
+    void _applyStatus(const rv2_interfaces::r1::EntityDecision& decision) override
+    {
+        ManagerTestAccess::apply(*source_, decision);
+    }
+    void _setStateCallbackErased(ControlSignalState state, rv2_interfaces::r1::StateCb cb) override
+    {
+        ManagerTestAccess::setSourceStateCallback(*source_, state, std::move(cb));
+    }
+
+    std::shared_ptr<BaseControlSignalSource> source_;
+    std::shared_ptr<M22Trace> trace_;
 };
 
 class ManagerTest : public ::testing::Test
@@ -1301,20 +1456,35 @@ TEST_F(ManagerTest, M21_CallbackReentry)
         }));
 }
 
-// M22: activity vs terminal-commit race — continued sending cancels the
-// removal indefinitely; stopping ends in exactly one removal flow.
+// M22: retain periodic activity coverage, then force both real tick orderings:
+// calc -> accepted send -> failed seal; successful seal -> rejected send ->
+// callback -> shutdown -> removal, with exactly one terminal flow.
 TEST_F(ManagerTest, M22_ActivityCancelsTerminal)
 {
     makeManagers();
-    std::atomic<int> discFires{0};
-    mgrA_->registerSourceStateCallback(ControlSignalState::DISCONNECTED,
-                                       [&](const std::string&, ControlSignalState, ControlSignalState)
-                                       {
-                                           discFires.fetch_add(1);
-                                       });
+    const auto trace = std::make_shared<M22Trace>();
+    M22GateRelease releaseOnExit{trace};
+    mgrA_->registerSourceStateCallback(
+        ControlSignalState::DISCONNECTED,
+        [manager = mgrA_.get(), trace](const std::string& controller, ControlSignalState, ControlSignalState)
+        {
+            trace->callbackSawEntry.store(manager->getSourceState(controller) == ControlSignalState::DISCONNECTED);
+            trace->callbacks.fetch_add(1);
+            trace->record("callback");
+        });
     auto i = info("m22", nameB(), 100 * kMs, 250 * kMs);
     auto r = mgrA_->registerSource(i);
     ASSERT_EQ(r.code, RegisterError::OK);
+    mgrA_->setNotificationCallback(
+        [manager = mgrA_.get(), trace, controller = i.controller_name](const auto& event)
+        {
+            if (event.kind == ControlSignalManager::EventKind::LOCAL_DISCONNECTED && event.controllerName == controller)
+            {
+                trace->notificationSawAbsent.store(!manager->getSourceState(controller).has_value());
+                trace->record("removed");
+                trace->removals.fetch_add(1);
+            }
+        });
 
     // Keep sending well past several disconnect windows: never removed.
     for (int k = 0; k < 20; ++k)
@@ -1323,16 +1493,75 @@ TEST_F(ManagerTest, M22_ActivityCancelsTerminal)
         std::this_thread::sleep_for(50ms);
     }
     EXPECT_TRUE(r.handle.valid());
-    EXPECT_EQ(discFires.load(), 0);
+    EXPECT_EQ(trace->callbacks.load(), 0);
+
+    // Quiesce before replacing the pointer so no old tick snapshot can seal
+    // the same underlying Source and then fail the pointer identity check.
+    executor_->cancel();
+    spin_.join();
+    auto probe = ManagerTestAccess::decorateSource<M22SourceProbe>(*mgrA_, i.controller_name, trace);
+    ASSERT_NE(probe, nullptr);
+    spin_ = std::thread(
+        [this]
+        {
+            executor_->spin();
+        });
+    ASSERT_TRUE(waitFor(
+        [&]
+        {
+            return executor_->is_spinning();
+        }));
+
+    // Activity wins after the actual terminal calculation, before commit.
+    ASSERT_TRUE(trace->wait(M22Trace::CALCULATED));
+    EXPECT_EQ(trace->candidates.load(), 1);
+    EXPECT_EQ(trace->callbacks.load(), 0);
+    ASSERT_EQ(r.handle.send(makeJoy(2.f)), SendResult::OK);
+    EXPECT_GT(probe->currentDecision().observedActivityGeneration, trace->firstGeneration.load());
+    trace->release(M22Trace::CALCULATED);
+    ASSERT_TRUE(trace->wait(M22Trace::CANCELLED));
+    EXPECT_EQ(trace->cancellations.load(), 1);
+    EXPECT_EQ(trace->seals.load(), 0);
+    EXPECT_TRUE(r.handle.valid());
+    EXPECT_TRUE(r.handle.ready());
+    EXPECT_EQ(mgrA_->getSourceInfoList().size(), 1u);
+    EXPECT_NE(mgrA_->getSourceState(i.controller_name), ControlSignalState::DISCONNECTED);
+    EXPECT_EQ(trace->callbacks.load(), 0);
+    EXPECT_EQ(trace->shutdowns.load(), 0);
+    EXPECT_EQ(trace->removals.load(), 0);
+    trace->release(M22Trace::CANCELLED);
+
+    // Seal wins on the next real inactivity candidate. The slot is still
+    // registered here, proving rejection comes from the endpoint hot path.
+    ASSERT_TRUE(trace->wait(M22Trace::SEALED));
+    EXPECT_EQ(trace->candidates.load(), 2);
+    EXPECT_EQ(trace->seals.load(), 1);
+    EXPECT_TRUE(r.handle.valid());
+    EXPECT_TRUE(r.handle.ready());
+    EXPECT_EQ(r.handle.send(makeJoy(3.f)), SendResult::DISCONNECTED);
+    EXPECT_EQ(trace->callbacks.load(), 0);
+    EXPECT_EQ(trace->shutdowns.load(), 0);
+    EXPECT_EQ(trace->removals.load(), 0);
+    trace->release(M22Trace::SEALED);
 
     // Stop: exactly one callback -> shutdown -> removal flow.
     ASSERT_TRUE(waitFor(
         [&]
         {
-            return !r.handle.valid();
+            return !r.handle.valid() && trace->removals.load() == 1;
         },
         5000));
-    EXPECT_EQ(discFires.load(), 1);
+    std::this_thread::sleep_for(200ms);  // subsequent ticks must not repeat removal
+    EXPECT_FALSE(r.handle.valid());
+    EXPECT_FALSE(mgrA_->getSourceState(i.controller_name).has_value());
+    EXPECT_EQ(r.handle.send(makeJoy(4.f)), SendResult::DISCONNECTED);
+    EXPECT_EQ(trace->callbacks.load(), 1);
+    EXPECT_EQ(trace->shutdowns.load(), 1);
+    EXPECT_EQ(trace->removals.load(), 1);
+    EXPECT_TRUE(trace->callbackSawEntry.load());
+    EXPECT_TRUE(trace->notificationSawAbsent.load());
+    EXPECT_EQ(trace->snapshot(), (std::vector<std::string>{"callback", "shutdown", "removed"}));
+    EXPECT_FALSE(trace->timedOut.load());
 }
 
 // M23: stale control messages — old-identity UNREGISTER and CsmNotify hit

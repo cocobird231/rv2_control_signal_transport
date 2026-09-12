@@ -10,8 +10,11 @@
 #define RV2_CONTROL_SIGNAL_TRANSPORT_TEST_R1_TEST_UTILS_H
 
 #include <memory>
+#include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <thread>
+#include <utility>
 
 #include <gtest/gtest.h>
 #include <rclcpp/rclcpp.hpp>
@@ -61,6 +64,38 @@ struct ManagerTestAccess
     }
 
     template <typename Entity> static void sealTerminal(Entity& e) { e._sealTerminal(); }
+
+    static void setSourceStateCallback(BaseControlSignalSource& source, ControlSignalState state, StateCb cb)
+    {
+        source._setStateCallbackErased(state, std::move(cb));
+    }
+
+    /// Install a forwarding probe only while the test executor is stopped.
+    /// Keep the registered slot/identity; never nest the map and slot locks.
+    template <typename Probe, typename Manager, typename... Args>
+    static std::shared_ptr<Probe> decorateSource(Manager& manager, const std::string& controller, Args&&... args)
+    {
+        auto slot = [&]
+        {
+            std::shared_lock<std::shared_mutex> lk(manager.sourceMtx_);
+            return manager.sources_.at(controller);
+        }();
+        std::unique_lock<std::shared_mutex> sl(slot->slotMtx);
+        if (!slot->desired || !slot->endpoint || slot->phase != decltype(slot->phase)::REGISTERED)
+            return {};
+        auto probe = std::make_shared<Probe>(slot->endpoint, std::forward<Args>(args)...);
+        slot->endpoint = probe;
+        return probe;
+    }
+
+    /// Observe the real wait-entry fence before a destroy-while-waiting test.
+    template <typename SinkT> static uint64_t waiterCount(const SinkT& sink)
+    {
+        return sink.waiters_.load(std::memory_order_acquire);
+    }
+
+    /// Run the exact receive callback path without depending on DDS scheduling.
+    template <typename SinkT, typename MsgT> static void store(SinkT& sink, const MsgT& msg) { sink._store(msg); }
 
     /// S14/S16: inject service outcomes directly so out-of-order completion
     /// interleavings are deterministic (the network cannot be ordered).

@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -266,13 +267,18 @@ TEST_F(SourceTest, S11_RateConcurrency)
 {
     auto src = ManagerTestAccess::createSource<Joy>(node_.get(), topicInfo("s11/joy"));
     std::atomic<bool> stop{false};
+    std::atomic<uint64_t> sent{0}, failed{0}, reads{0};
+    std::atomic<bool> invalidRate{false};
 
     std::thread sender(
         [&]
         {
             while (!stop.load())
             {
-                src->send(makeJoy(1.f));
+                if (src->send(makeJoy(1.f)) == SendResult::OK)
+                    sent.fetch_add(1);
+                else
+                    failed.fetch_add(1);
                 std::this_thread::sleep_for(1ms);
             }
         });
@@ -280,7 +286,12 @@ TEST_F(SourceTest, S11_RateConcurrency)
         [&]
         {
             while (!stop.load())
-                (void)src->sendRateHz();
+            {
+                const float rate = src->sendRateHz();
+                if (!std::isfinite(rate) || rate < 0.f)
+                    invalidRate.store(true);
+                reads.fetch_add(1);
+            }
         });
     for (int i = 0; i < 50; ++i)
     {
@@ -291,7 +302,26 @@ TEST_F(SourceTest, S11_RateConcurrency)
     stop.store(true);
     sender.join();
     reader.join();
+    EXPECT_GT(sent.load(), 0u);
+    EXPECT_EQ(failed.load(), 0u);
+    EXPECT_GT(reads.load(), 0u);
+    EXPECT_FALSE(invalidRate.load());
     EXPECT_GT(src->sendRateHz(), 0.f);
+
+    // After the writers stop, sample at equal bucket phases so the covered
+    // span is constant. The published cache must monotonically converge to
+    // zero as the frozen traffic ages out of the eight-bucket window.
+    const int64_t stoppedAt = steadyNowNs();
+    float previous = ManagerTestAccess::calc(*src, stoppedAt).status.rateHz;
+    for (int bucket = 0; bucket <= 8; ++bucket)
+    {
+        const auto d = ManagerTestAccess::calc(*src, stoppedAt + bucket * 125 * kMs);
+        ManagerTestAccess::apply(*src, d);
+        EXPECT_FLOAT_EQ(src->sendRateHz(), d.status.rateHz);
+        EXPECT_LE(src->sendRateHz(), previous);
+        previous = src->sendRateHz();
+    }
+    EXPECT_FLOAT_EQ(src->sendRateHz(), 0.f);
 }
 
 // S12: state callbacks — registered slots fire exactly once per transition
@@ -822,6 +852,14 @@ TEST_F(SinkTest, K12_RateConcurrency)
     auto sink = ManagerTestAccess::createSink<Joy>(node_.get(), topicInfo("k12/joy"));
     auto pub = node_->create_publisher<Joy>("k12/joy", 10);
     std::atomic<bool> stop{false};
+    auto received = std::make_shared<std::atomic<uint64_t>>(0);
+    sink->setMsgCallback(
+        [received](const Joy&, const ControlSignalInfo&)
+        {
+            received->fetch_add(1);
+        });
+    std::atomic<uint64_t> published{0}, reads{0};
+    std::atomic<bool> invalidRate{false};
 
     std::thread flooder(
         [&]
@@ -829,6 +867,7 @@ TEST_F(SinkTest, K12_RateConcurrency)
             while (!stop.load())
             {
                 pub->publish(makeJoy(1.f));
+                published.fetch_add(1);
                 std::this_thread::sleep_for(1ms);
             }
         });
@@ -836,8 +875,16 @@ TEST_F(SinkTest, K12_RateConcurrency)
         [&]
         {
             while (!stop.load())
-                (void)sink->dataRateHz();
+            {
+                const float rate = sink->dataRateHz();
+                if (!std::isfinite(rate) || rate < 0.f)
+                    invalidRate.store(true);
+                reads.fetch_add(1);
+            }
         });
+    const auto intakeDeadline = std::chrono::steady_clock::now() + 3s;
+    while (received->load() == 0 && std::chrono::steady_clock::now() < intakeDeadline)
+        std::this_thread::sleep_for(1ms);
     for (int i = 0; i < 50; ++i)
     {
         ManagerTestAccess::apply(*sink, ManagerTestAccess::calc(*sink, steadyNowNs()));
@@ -846,6 +893,11 @@ TEST_F(SinkTest, K12_RateConcurrency)
     stop.store(true);
     flooder.join();
     reader.join();
+    EXPECT_GT(published.load(), 0u);
+    EXPECT_GT(received->load(), 0u);
+    EXPECT_GT(reads.load(), 0u);
+    EXPECT_FALSE(invalidRate.load());
+    EXPECT_GT(sink->dataRateHz(), 0.f);
 }
 
 // K13: waitForMessage — a message sent during the wait returns immediately
@@ -929,7 +981,18 @@ TEST_F(SinkTest, K15_WaitInterruptedByShutdown)
             EXPECT_FALSE(raw->waitForMessage(out, 0));  // infinite wait
             returned.store(true);
         });
-    std::this_thread::sleep_for(100ms);
+    const auto armedDeadline = std::chrono::steady_clock::now() + 3s;
+    while (ManagerTestAccess::waiterCount(*sink) == 0 && std::chrono::steady_clock::now() < armedDeadline)
+        std::this_thread::sleep_for(1ms);
+    const bool armed = ManagerTestAccess::waiterCount(*sink) == 1;
+    if (!armed)
+    {
+        // Keep ownership until a delayed waiter has entered and returned.
+        // Never destroy the raw pointer's pointee on a failed precondition.
+        sink->shutdown();
+        waiter.join();
+        FAIL() << "waitForMessage never entered its waiter fence";
+    }
     EXPECT_FALSE(returned.load());
     const auto t0 = std::chrono::steady_clock::now();
     sink.reset();  // ~ControlSignalSink: shutdown-wake + drain waiters_
@@ -974,6 +1037,68 @@ TEST_F(SinkTest, K16_SealVsReceiveInterleave)
     pub2->publish(makeJoy(9.f));
     waiter.join();
     EXPECT_EQ(fires.load(), 0);
+
+    // (c) Real competing threads execute the production receive hot path and
+    // terminal CAS. Keep (a)/(b)'s DDS proofs; this direct friend invocation
+    // removes the scheduler gap between publishing and actually receiving.
+    for (int round = 0; round < 64; ++round)
+    {
+        auto racingSink =
+            ManagerTestAccess::createSink<Joy>(node_.get(), topicInfo("k16race/joy_" + std::to_string(round)));
+        ManagerTestAccess::store(*racingSink, makeJoy(1.f));
+        ManagerTestAccess::apply(*racingSink, ManagerTestAccess::calc(*racingSink, steadyNowNs()));
+        const auto terminal = ManagerTestAccess::calc(*racingSink, steadyNowNs() + kDisconnect + kMs);
+        ASSERT_EQ(terminal.status.state, ControlSignalState::DISCONNECTED);
+
+        std::atomic<int> ready{0};
+        std::atomic<bool> go{false};
+        std::atomic<int> accepted{0};
+        racingSink->setMsgCallback(
+            [&](const Joy&, const ControlSignalInfo&)
+            {
+                accepted.fetch_add(1);
+            });
+        bool sealed = false;
+        std::thread receiver(
+            [&]
+            {
+                ready.fetch_add(1);
+                while (!go.load())
+                    std::this_thread::yield();
+                ManagerTestAccess::store(*racingSink, makeJoy(2.f));
+            });
+        std::thread sealer(
+            [&]
+            {
+                ready.fetch_add(1);
+                while (!go.load())
+                    std::this_thread::yield();
+                sealed = ManagerTestAccess::trySealLocalTerminal(*racingSink, terminal);
+            });
+        const auto readyDeadline = std::chrono::steady_clock::now() + 3s;
+        while (ready.load() != 2 && std::chrono::steady_clock::now() < readyDeadline)
+            std::this_thread::yield();
+        const bool bothReady = ready.load() == 2;
+        go.store(true);
+        receiver.join();
+        sealer.join();
+        ASSERT_TRUE(bothReady);
+        EXPECT_EQ(accepted.load(), sealed ? 0 : 1);
+
+        // Seal changes only the activity fence, not the cached ACTIVE state,
+        // so read() exposes whether the racing receive stored its payload.
+        Joy latest;
+        ASSERT_TRUE(racingSink->read(latest));
+        ASSERT_EQ(latest.axes.size(), 1u);
+        EXPECT_FLOAT_EQ(latest.axes[0], sealed ? 1.f : 2.f);
+        ManagerTestAccess::sealTerminal(*racingSink);
+        const int beforeRejected = accepted.load();
+        ManagerTestAccess::store(*racingSink, makeJoy(9.f));
+        EXPECT_EQ(accepted.load(), beforeRejected);
+        ASSERT_TRUE(racingSink->read(latest));
+        EXPECT_FLOAT_EQ(latest.axes[0], sealed ? 1.f : 2.f);
+        racingSink->setMsgCallback(nullptr);
+    }
 }
 
 }  // namespace
