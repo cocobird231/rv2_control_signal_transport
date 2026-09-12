@@ -1,255 +1,26 @@
-# rv2_control_signal_transport
+# rv2_control_signal_transport — R1
 
-ROS 2 package that provides the **ControlSignalManager / ControlSignalSource / ControlSignalSink** transport layer and a ready-to-use **KeyboardSourceNode** composable node.
+The `r1` branch contains the R1 transport library, lifecycle manager and
+`csm_master_node`. Legacy RV2 code remains on the frozen `master` branch and
+in earlier release commits; the old library, keyboard node and legacy tests
+are no longer built or installed by this branch.
 
----
+## Public surface
 
-## Package contents
+- Headers: `include/rv2_control_signal_transport/r1/`
+- C++ namespace: `rv2_interfaces::r1` (retained for R1 API compatibility;
+  it does not require the legacy `rv2_interfaces` ROS package)
+- Shared library/export: `r1_control_signal_transport`
+- Executable: `ros2 run rv2_control_signal_transport csm_master_node`
+- Workspace dependency: `r1_interfaces`; no legacy `rv2_interfaces` dependency
 
-| Path | Description |
-|---|---|
-| `include/rv2_control_signal_transport/control_signal_transport.h` | Core transport primitives: `ControlSignalSource`, `ControlSignalSink`, base classes |
-| `include/rv2_control_signal_transport/control_signal_factory.h` | `ControlSignalFactory` singleton registry + `REGISTER_CONTROL_SIGNAL` macro |
-| `include/rv2_control_signal_transport/control_signal_manager.h` | `ControlSignalManager` — multi-source/sink registry with auto-disconnect |
-| `include/rv2_control_signal_transport/keyboard_handler.h` | Linux evdev keyboard reader (`KeyboardHandler`) |
-| `src/control_signal_factory.cpp` | `ControlSignalFactory::Instance()` definition (shared-library singleton) |
-| `src/control_signal_types.cpp` | Concrete type registrations (Joy, Twist, String) via `REGISTER_CONTROL_SIGNAL` |
-| `src/keyboard_source_node.cpp` | `KeyboardSourceNode` composable node |
-| `config/keyboard_source.yaml` | Default parameter file (generic) |
-| `config/keyboard_source_joy.yaml` | Default parameter file for Joy mode |
-| `config/keyboard_source_twist.yaml` | Default parameter file for Twist mode |
-| `launch/keyboard_source.launch.py` | Launch with generic config |
-| `launch/keyboard_source_joy.launch.py` | Launch in Joy mode |
-| `launch/keyboard_source_twist.launch.py` | Launch in Twist mode |
+The full design and collaboration rules live in
+[rv2_project/docs/r1_design_docs](https://github.com/cocobird231/rv2_project/tree/master/docs/r1_design_docs).
+The legacy Doxyfile is preserved unchanged and is not a release version source.
 
----
+## Build and test
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Source node (e.g. KeyboardSourceNode)                      │
-│                                                             │
-│  ControlSignalManager (Source CSM)                          │
-│  └── ControlSignalSource<Joy|Twist>  ──── topic pub ───►    │
-└────────────────────────────────────────────────────────────┘
-                                │  /channel_name (topic)
-                                ▼
-┌────────────────────────────────────────────────────────────┐
-│  Server node (e.g. ControlServerNode)                      │
-│                                                            │
-│  ControlSignalManager (Server CSM)                         │
-│  └── ControlSignalSink<Joy|Twist>  ◄──── topic sub         │
-│                                                            │
-│  ControlServer                                             │
-│  └── active-sink selection + output callbacks              │
-└────────────────────────────────────────────────────────────┘
-```
-
-Registration flow:
-1. Source CSM calls `<server_name>/control_signal_reg` (service).
-2. Server CSM creates a matching `ControlSignalSink` and starts monitoring it.
-3. Source CSM creates the local `ControlSignalSource` and begins publishing.
-
----
-
-## Transport primitives
-
-### `ControlSignalSource<msgT, srvT>`
-
-Wraps a ROS 2 **publisher** (topic mode, default) or **service client** (service mode).
-
-- `send(msg, cmdSuccess)` — publishes or calls the service.
-- `getState()` — passive timeout check; returns `UNKNOWN / ACTIVE / LOW_FREQ / TIMEOUT / DISCONNECTED`.
-- Topic-mode sources have no send-side feedback; state stays `UNKNOWN` unless keep-alive is enabled.
-
-### `ControlSignalSink<msgT, srvT>`
-
-Wraps a ROS 2 **subscription** (topic mode, default) or **service server** (service mode).
-
-- `getState()` — passive timeout check against `timeout_ns` from construction info.
-- `setMsgCallback(cb)` — optional callback fired on every received message.
-- State transitions: `UNKNOWN → ACTIVE → LOW_FREQ → TIMEOUT → DISCONNECTED`.
-  - `UNKNOWN` transitions to `TIMEOUT` after `timeout_ns` even if no message was ever received (ensures auto-disconnect works for idle sources).
-
-### `ControlSignalManager`
-
-Owns maps of Sources and Sinks, keyed by `channel_name`.
-
-- `registerSource(info, timeoutMs)` — validates config, calls the target CSM's `control_signal_reg` service, then stores a local Source. Blocking; must be called after the executor is spinning.
-- `setSinkMsgCallback<msgT>(cb)` — type-safe callback applied to all current and future Sinks of type `msgT`.
-- **Status timer** (period = `statusTimerIntervalMs`) — walks Sources and Sinks; removes any entry that has been continuously in `TIMEOUT` for longer than its `disconnect_timeout_ns`.
-
----
-
-## `ControlSignalInfo` fields
-
-| Field | Type | Description |
-|---|---|---|
-| `target_csm_name` | string | Name of the target ControlSignalManager (server) |
-| `control_signal_mode` | string | `"topic"` or `"service"` |
-| `control_signal_type` | string | `"joy"`, `"twist"`, or `"string"` |
-| `channel_name` | string | Topic/service name used for the transport |
-| `send_freq_hz` | float | Expected publish frequency (0 = unchecked) |
-| `timeout_ns` | int64 | Nanoseconds before TIMEOUT (0 = disabled) |
-| `disconnect_timeout_ns` | int64 | ns in TIMEOUT before auto-remove (0 = never) |
-| `priority` | int8 | Source priority (1–100; higher = preferred) |
-| `use_keep_alive` | bool | Enable keep-alive heartbeat |
-| `keep_alive_interval_ns` | int64 | Heartbeat interval (ns) |
-
-Validation rules (checked by `validateControlSignalInfo()`):
-- `timeout_ns` > 0 required when `disconnect_timeout_ns` > 0.
-- `disconnect_timeout_ns` > `timeout_ns` (cannot disconnect before timing out).
-- `1 / send_freq_hz` < `timeout_ns` (send period must be shorter than timeout).
-
----
-
-## KeyboardSourceNode
-
-Composable node (`plugin: KeyboardSourceNode`) that reads a Linux evdev keyboard device and publishes control signals.
-
-### Parameters
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `server_name` | string | `"control_server"` | Target CSM name |
-| `csm_name` | string | `"keyboard_source"` | This node's CSM name |
-| `channel_name` | string | `"keyboard_control"` | Source channel name |
-| `priority` | int64 | `50` | Source priority (1–100) |
-| `timeout_ms` | int64 | `2000` | Inactivity timeout (ms) |
-| `disconnect_timeout_ms` | int64 | `10000` | ms in TIMEOUT before CSM removes source (0 = never) |
-| `initial_msg_type` | string | `"joy"` | `"joy"` or `"twist"` (fixed at startup) |
-| `max_setpoint_linear` | double | `1.0` | Maximum linear setpoint |
-| `max_setpoint_angular` | double | `1.0` | Maximum angular setpoint |
-| `ramp_step_linear` | double | `0.05` | Linear setpoint change per send tick |
-| `ramp_step_angular` | double | `0.05` | Angular setpoint change per send tick |
-| `send_rate_ms` | int64 | `100` | Publish interval (ms) |
-| `keyboard_device` | string | `""` | evdev path (e.g. `/dev/input/event3`); `""` = auto-detect; `"stdin"` = noVNC terminal |
-| `csm_status_timer_interval_ms` | int64 | `1000` | CSM status/disconnect timer period (ms) |
-
-### Key bindings — Joy mode
-
-| Key | Action | Signal |
-|---|---|---|
-| W / ↑ | Forward | `axes[0]` → `+max_setpoint_linear` |
-| S / ↓ | Backward | `axes[1]` → `+max_setpoint_linear` |
-| A / ← | Turn left | `axes[2]` → `+max_setpoint_angular` |
-| D / → | Turn right | `axes[3]` → `+max_setpoint_angular` |
-| 1 | Damp | `buttons[0]` |
-| 2 | StandUp | `buttons[1]` |
-| 3 | StandDown | `buttons[2]` |
-| 4 | StopMove | `buttons[6]` |
-| 5 | SwitchGait 0 | `buttons[7]` |
-| 6 | SwitchGait 1 | `buttons[8]` |
-| 7 | RecoveryStand | `buttons[9]` |
-| E | E-stop | `buttons[0..3]` = −99 |
-| R | Request active | `buttons[0..3]` = 99 |
-| SPACE | Zero all | axes and buttons cleared |
-
-### Key bindings — Twist mode
-
-| Key | Action | Signal |
-|---|---|---|
-| W / ↑ | Forward | `linear.x` → `+max_setpoint_linear` |
-| S / ↓ | Backward | `linear.x` → `−max_setpoint_linear` |
-| A / ← | Turn left | `angular.z` → `+max_setpoint_angular` |
-| D / → | Turn right | `angular.z` → `−max_setpoint_angular` |
-| Q | Strafe left | `linear.y` → `+max_setpoint_linear` |
-| E | Strafe right | `linear.y` → `−max_setpoint_linear` |
-| Z | E-stop | `linear.z = angular.x = angular.y` = −99 |
-| R | Request active | = 99 |
-| SPACE | Zero all | all fields cleared |
-
-Movement axes ramp toward the setpoint while a key is held and ramp back to zero on release. Command keys (1–7, E, R, Z/SPACE) fire as one-shot events on PRESS only.
-
-### Keyboard device setup
-
-The node reads directly from `/dev/input/eventX` (Linux evdev).  
-Add your user to the `input` group so no `sudo` is needed:
-
-```bash
-sudo usermod -aG input $USER
-# log out and back in, then verify:
-groups | grep input
-```
-
-Leave `keyboard_device` empty to auto-detect the first keyboard, or set it explicitly:
-
-```yaml
-keyboard_device: "/dev/input/event3"
-```
-
-Set `keyboard_device: "stdin"` for noVNC / terminal environments that cannot open evdev directly.
-
----
-
-## Usage
-
-### Quickstart
-
-```bash
-# Joy mode (default config)
-ros2 launch rv2_control_signal_transport keyboard_source_joy.launch.py
-
-# Twist mode
-ros2 launch rv2_control_signal_transport keyboard_source_twist.launch.py
-
-# Custom config
-ros2 launch rv2_control_signal_transport keyboard_source.launch.py \
-    config_file:=/path/to/my_keyboard_source.yaml
-```
-
-### Using as a library
-
-```cpp
-#include "rv2_control_signal_transport/control_signal_manager.h"
-#include "rv2_control_signal_transport/control_signal_factory.h"
-
-// Source side — build info descriptor
-rv2_interfaces::msg::ControlSignalInfo info;
-info.target_csm_name       = "control_server";
-info.control_signal_mode   = rv2_interfaces::msg::ControlSignalConst::CONTROL_SIGNAL_MODE_TOPIC;
-info.control_signal_type   = rv2_interfaces::msg::ControlSignalConst::CONTROL_SIGNAL_TYPE_JOY;
-info.channel_name          = "my_channel";
-info.send_freq_hz          = 20.0f;
-info.timeout_ns            = 2'000'000'000LL;
-info.disconnect_timeout_ns = 10'000'000'000LL;
-info.priority              = 50;
-
-// Register source with the target CSM — blocks until response; node must be spinning
-auto csm = std::make_unique<rv2_interfaces::ControlSignalManager>(node, "my_csm", 1000);
-csm->registerSource(info, 5000);
-
-// Option A: type-erased send via BaseControlSignalSource::sendErased()
-//           (correct regardless of srvT — no cast required)
-auto base = csm->getSource("my_channel");
-if (base) {
-    sensor_msgs::msg::Joy joy_msg;
-    // ... fill joy_msg ...
-    bool ok;
-    base->sendErased(&joy_msg, ok);
-}
-
-// Option B: create a source directly from the factory (bypasses CSM)
-auto src = rv2_interfaces::ControlSignalFactory::Instance()
-    .CreateSource("joy", node, info);  // returns unique_ptr<BaseControlSignalSource>
-bool ok;
-src->sendErased(&joy_msg, ok);
-```
-
-### Building
-
-```bash
-cd ~/ros2_ws
-colcon build --packages-select rv2_control_signal_transport
-source install/setup.bash
-```
-
-### Testing
-
-Initialize the package's pinned framework submodule, then run its scripts from
-this package directory. Dependencies, builds, and tests run inside Docker;
-artifacts remain under the ignored `test_env/<distro>/` directory.
+Initialize the pinned framework, then use the package's own Docker lifecycle:
 
 ```bash
 git submodule update --init --recursive
@@ -259,22 +30,40 @@ git submodule update --init --recursive
 ./r1_test_framework/test_clean.sh
 ```
 
-`test/unit/` covers LivenessState, Info validation, Source/Sink, Factory, and
-Handle contracts H1–H6, plus the legacy transport primitives. `test/integration/`
-covers Manager registration/callbacks, CsmMaster heartbeat/reconciliation,
-Handle retry lifecycle H7–H8, and the legacy Manager. Shared fixtures live
-directly under `test/`.
+Run lint separately before a PR:
 
-Both categories run by default. While the container exists, use
-`./r1_test_framework/test_run.sh -s unit` or `-s integration` to select a category.
-CTest targets retain their original names; `test_handles_lifecycle` holds the
-extracted H7–H8 cases, so the `test_handles` TODO filter still selects all H cases.
-H3 retains its assertion-enabled and `NDEBUG` branches.
+```bash
+./r1_test_framework/test_lint.sh
+```
 
----
+All compilation, dependency installation and tests run inside the framework's
+official ROS Docker image. Keep the sibling `r1_interfaces` checkout at the
+release selected by the project snapshot. ROS test jobs must run serially
+across owners unless DDS isolation has been explicitly demonstrated.
 
-## Dependencies
+R1 functional coverage is unchanged: unit 72 cases and integration 41 cases
+in eight gtest targets. The removed 21 cases belonged solely to legacy RV2.
+ASan covers 64 cases; UBSan covers all 72 R1 unit cases. TSan remains opt-in
+(`-t on`), and SKIP never means race-free.
 
-- `rclcpp`, `rclcpp_components`
-- `sensor_msgs`, `geometry_msgs`, `std_msgs`
-- `rv2_interfaces`
+The currently pinned framework release still expects a legacy UBSan target.
+R1-only official acceptance requires the compatible framework PR to be merged,
+pulled and pinned first. Do not add a fake target, skip UBSan or alter a
+released framework checkout to bypass that requirement. Development override
+results must be identified as preliminary.
+
+Logs and per-case XML are preserved under `test_env/<distro>/`.
+`test/unit/` tests single contracts; `test/integration/` tests manager,
+lifecycle and master collaboration. Debian packaging and clean downstream
+export verification use the separate `test_packages.sh` entry.
+
+## Migration and versions
+
+Consumers of legacy `control_signal_transport`, keyboard executables, root
+legacy headers or keyboard launch/config files must remain on `master` or an
+earlier release until migrated. R1 names and contracts are not renamed by
+this cleanup.
+
+The ROS version comes from `package.xml`. Functional changes and test fixes
+are committed separately from the PR-ready version-only commit and annotated
+`vX.Y.Z` tag. Transport PRs target `r1`; do not merge them into legacy `master`.
