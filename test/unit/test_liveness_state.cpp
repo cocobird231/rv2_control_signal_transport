@@ -271,6 +271,46 @@ TEST(LivenessStateTest, L14_MultiWriterOutOfOrder)
     EXPECT_TRUE(ls.recordActivity(held - 5'000));
     EXPECT_EQ(ls.activitySnapshot().lastActivityNs, held);
     EXPECT_EQ(ls.activitySnapshot().generation, s.generation + 1);
+
+    // The activity-generation CAS also competes with the terminal seal. Both
+    // start from one observed generation; exactly one may accept its mutation.
+    for (int round = 0; round < 64; ++round)
+    {
+        LivenessState racing(kT0);
+        ASSERT_TRUE(racing.recordActivity(kT0));
+        const auto terminal = racing.calcState(kT0 + kDisconnect + 1, kTimeout, kDisconnect);
+        ASSERT_EQ(terminal.state, ControlSignalState::DISCONNECTED);
+        std::atomic<int> ready{0};
+        std::atomic<bool> go{false};
+        bool recorded = false;
+        bool sealed = false;
+        std::thread writer(
+            [&]()
+            {
+                ready.fetch_add(1);
+                while (!go.load())
+                    std::this_thread::yield();
+                recorded = racing.recordActivity(kT0 + kDisconnect + 2);
+            });
+        std::thread sealer(
+            [&]()
+            {
+                ready.fetch_add(1);
+                while (!go.load())
+                    std::this_thread::yield();
+                sealed = racing.trySealActivity(terminal.observedActivityGeneration);
+            });
+        while (ready.load() != 2)
+            std::this_thread::yield();
+        go.store(true);
+        writer.join();
+        sealer.join();
+        EXPECT_NE(recorded, sealed);
+        EXPECT_EQ(racing.activitySnapshot().generation, recorded ? 2u : 1u);
+        EXPECT_EQ(racing.activitySnapshot().sealed, sealed);
+        racing.sealActivity();
+        EXPECT_FALSE(racing.recordActivity(kT0 + kDisconnect + 3));
+    }
 }
 
 // L15: activity lands after a TIMEOUT computation — committing the stale
