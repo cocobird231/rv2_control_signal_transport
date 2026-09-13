@@ -46,11 +46,13 @@ in eight gtest targets. The removed 21 cases belonged solely to legacy RV2.
 ASan covers 64 cases; UBSan covers all 72 R1 unit cases. TSan remains opt-in
 (`-t on`), and SKIP never means race-free.
 
-The currently pinned framework release still expects a legacy UBSan target.
-R1-only official acceptance requires the compatible framework PR to be merged,
-pulled and pinned first. Do not add a fake target, skip UBSan or alter a
-released framework checkout to bypass that requirement. Development override
-results must be identified as preliminary.
+The pinned framework v0.5.1 supports both R1-only and mixed legacy/R1 layouts.
+Its merged release SHA was verified after pulling master; the original tag
+is preserved despite the rebase. UBSan checks all registered unit targets
+and requires the five R1 targets and their case floor. An older checkout
+that still builds a legacy unit target must run that target too.
+Formal validation uses the package's own nested entry points; development
+framework overrides do not substitute for that acceptance.
 
 Logs and per-case XML are preserved under `test_env/<distro>/`.
 `test/unit/` tests single contracts; `test/integration/` tests manager,
